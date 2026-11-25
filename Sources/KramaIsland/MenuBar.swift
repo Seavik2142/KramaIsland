@@ -138,6 +138,12 @@ final class MenuBarController: NSObject {
             mi.target = self
             mi.representedObject = preset.rawValue
         }
+        let custom = sub.addItem(
+            withTitle: "Tile Project Grid (\(AppSettings.shared.customGridLabel))   ⌃⌥G",
+            action: #selector(runCustomGridTile),
+            keyEquivalent: ""
+        )
+        custom.target = self
         return sub
     }
 
@@ -154,6 +160,10 @@ final class MenuBarController: NSObject {
         guard let raw = sender.representedObject as? String, let preset = MultiTilePreset(rawValue: raw) else { return }
         WindowManager.shared.tile(preset)
     }
+
+    @objc private func runCustomGridTile() {
+        WindowManager.shared.tileCustomGrid()
+    }
 }
 
 extension MenuBarController: NSMenuDelegate {
@@ -162,6 +172,13 @@ extension MenuBarController: NSMenuDelegate {
             item.state = LaunchAtLogin.isEnabled ? .on : .off
         }
         let s = AppSettings.shared
+        for item in menu.items {
+            if let sub = item.submenu {
+                for subItem in sub.items where subItem.action == #selector(runCustomGridTile) {
+                    subItem.title = "Tile Project Grid (\(s.customGridLabel))   ⌃⌥G"
+                }
+            }
+        }
         for item in menu.items where item.action == #selector(toggleQuiet) {
             item.state = s.quietManualOn ? .on : .off
             item.title = s.quietManualOn && s.quietUntil > 0

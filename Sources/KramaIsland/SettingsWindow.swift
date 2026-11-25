@@ -46,6 +46,9 @@ final class SettingsWindowController {
             w.contentView = NSHostingView(rootView: SettingsView())
             w.isReleasedWhenClosed = false
             w.center()
+            NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w, queue: .main) { _ in
+                IslandState.shared?.setSizePreview(false)
+            }
             window = w
         }
         NSApp.activate(ignoringOtherApps: true)
@@ -127,6 +130,7 @@ struct SettingsView: View {
     @State private var copiedShortcutsPath = false
     @State private var clearedLocalData = false
     @State private var showAdvancedIntegrations = false
+    @State private var liveSizePreview = false
 
     private static let accentSwatches: [(name: String, hex: String, color: Color)] = [
         ("White", "#FFFFFF", .white),
@@ -158,7 +162,14 @@ struct SettingsView: View {
         .onAppear {
             accent = Theme.accent
             launchAtLogin = LaunchAtLogin.isEnabled
+            liveSizePreview = IslandState.shared?.isSizePreviewActive ?? false
             refreshPermissions()
+        }
+        .onChange(of: router.tab) { newTab in
+            if newTab != "general", liveSizePreview {
+                liveSizePreview = false
+                IslandState.shared?.setSizePreview(false)
+            }
         }
         .onReceive(Timer.publish(every: 2, on: .main, in: .common).autoconnect()) { _ in refreshPermissions() }
         .onReceive(NotificationCenter.default.publisher(for: .notchPermissionsReset)) { _ in refreshPermissions() }
@@ -336,16 +347,119 @@ struct SettingsView: View {
                 }
             }
 
-            SettingSection("Window Snap & Tiling") {
+            SettingSection("Dynamic Island Size") {
+                islandSizePreviewRow
+                SettingDivider()
+                SettingRow(
+                    symbol: "arrow.left.and.right", tint: .blue,
+                    title: "Horizontal width",
+                    subtitle: "Full width of the open Shade, Hover readout, Banner, and HUD"
+                ) {
+                    HStack(spacing: 8) {
+                        Slider(value: $settings.islandWidth, in: 360...760, step: 4)
+                            .frame(width: 150)
+                        Text("\(Int(settings.clampedIslandWidth)) pt")
+                            .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .frame(width: 48, alignment: .trailing)
+                    }
+                }
+                SettingDivider()
+                SettingRow(
+                    symbol: "arrow.up.and.down", tint: .indigo,
+                    title: "Vertical height",
+                    subtitle: "Full vertical height of the open Dynamic Island Shade"
+                ) {
+                    HStack(spacing: 8) {
+                        Slider(value: $settings.islandHeight, in: 320...860, step: 10)
+                            .frame(width: 150)
+                        Text("\(Int(settings.clampedIslandHeight)) pt")
+                            .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .frame(width: 48, alignment: .trailing)
+                    }
+                }
+                SettingDivider()
+                SettingRow(
+                    symbol: "arrow.left.to.line.compact", tint: .cyan,
+                    title: "Compact bar extra width",
+                    subtitle: "Adjusts horizontal width of the resting notch ears or compact pill"
+                ) {
+                    HStack(spacing: 8) {
+                        Slider(value: $settings.islandCompactWidthOffset, in: -10...160, step: 2)
+                            .frame(width: 150)
+                        let cw = Int(settings.clampedCompactWidthOffset)
+                        Text(cw >= 0 ? "+\(cw) pt" : "\(cw) pt")
+                            .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .frame(width: 48, alignment: .trailing)
+                    }
+                }
+                SettingDivider()
+                SettingRow(
+                    symbol: "arrow.up.and.down.square", tint: .teal,
+                    title: "Compact bar extra height",
+                    subtitle: "Increases vertical thickness of the resting Dynamic Island bar"
+                ) {
+                    HStack(spacing: 8) {
+                        Slider(value: $settings.islandCompactHeightOffset, in: 0...24, step: 1)
+                            .frame(width: 150)
+                        Text("+\(Int(settings.clampedCompactHeightOffset)) pt")
+                            .font(.system(size: 11.5, weight: .semibold, design: .rounded))
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .frame(width: 48, alignment: .trailing)
+                    }
+                }
+            }
+
+            SettingSection("Window Snap & Project Grid") {
                 SettingToggleRow(
                     symbol: "macwindow.on.rectangle", tint: .blue,
                     title: "Global ⌃⌥ snap shortcuts",
-                    subtitle: "⌃⌥ ←/→/↑/↓ halves · ⌃⌥↩ fill · ⌃⌥C center · ⌃⌥2/3/4 multi-app tile · ⌃⌥⌫ restore",
+                    subtitle: "⌃⌥ ←/→/↑/↓ halves · ⌃⌥↩ fill · ⌃⌥C center · ⌃⌥2/3/4 presets · ⌃⌥G custom grid · ⌃⌥⌫ restore",
                     isOn: $settings.windowSnapShortcuts
                 )
                 SettingDivider()
                 SettingRow(
-                    symbol: "square.split.2x2", tint: .indigo,
+                    symbol: "rectangle.split.1x2.fill", tint: .cyan,
+                    title: "Project grid rows",
+                    subtitle: "Number of horizontal rows for stacking project windows on one screen"
+                ) {
+                    Picker("", selection: $settings.windowGridRows) {
+                        Text("1").tag(1)
+                        Text("2").tag(2)
+                        Text("3").tag(3)
+                        Text("4").tag(4)
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(width: 160)
+                }
+                SettingDivider()
+                SettingRow(
+                    symbol: "rectangle.split.3x1.fill", tint: .indigo,
+                    title: "Project grid columns",
+                    subtitle: "Number of vertical columns for arranging platforms side-by-side"
+                ) {
+                    Picker("", selection: $settings.windowGridColumns) {
+                        Text("1").tag(1)
+                        Text("2").tag(2)
+                        Text("3").tag(3)
+                        Text("4").tag(4)
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
+                    .frame(width: 160)
+                }
+                SettingDivider()
+                projectGridPreviewRow
+                SettingDivider()
+                SettingRow(
+                    symbol: "square.split.2x2", tint: .purple,
                     title: "Window gap spacing",
                     subtitle: "Space left around and between tiled windows"
                 ) {
@@ -1052,6 +1166,189 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    private var islandSizePreviewRow: some View {
+        let w = settings.clampedIslandWidth
+        let h = settings.clampedIslandHeight
+        let cw = settings.clampedCompactWidthOffset
+        let ch = settings.clampedCompactHeightOffset
+        let presets: [(String, Double, Double, Double, Double)] = [
+            ("Compact", 380, 460, 0, 0),
+            ("Default", 416, 620, 0, 0),
+            ("Wide", 540, 660, 24, 2),
+            ("Large", 680, 780, 48, 4),
+        ]
+
+        // Normalized miniature MacBook screen (112×70) showing proportional island width & height.
+        let screenW: CGFloat = 112
+        let screenH: CGFloat = 70
+        let boxW = max(24, min(screenW - 10, (w / 1440.0) * screenW * 1.45))
+        let boxH = max(18, min(screenH - 6, (h / 920.0) * screenH * 0.92))
+        let compactW = max(18, min(boxW - 4, 28 + (cw / 160.0) * 28))
+        let compactH = max(5, min(12, 5 + (ch / 24.0) * 6))
+
+        return HStack(alignment: .center, spacing: 14) {
+            // Miniature display preview
+            ZStack(alignment: .top) {
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .fill(Color.primary.opacity(0.06))
+                    .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.11), lineWidth: 1))
+
+                // Expanded open island silhouette
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Color.black.opacity(0.88))
+                    .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(Color.accentColor.opacity(0.55), lineWidth: 1))
+                    .frame(width: boxW, height: boxH)
+                    .offset(y: 1)
+
+                // Compact top bar indicator
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(Color.accentColor.opacity(0.70))
+                    .frame(width: compactW, height: compactH)
+                    .offset(y: 2)
+            }
+            .frame(width: screenW, height: screenH)
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .animation(Motion.quick, value: w)
+            .animation(Motion.quick, value: h)
+            .animation(Motion.quick, value: cw)
+            .animation(Motion.quick, value: ch)
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Text("\(Int(w)) × \(Int(h)) pt")
+                        .font(.system(size: 12.5, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                    if cw != 0 || ch != 0 {
+                        trustChip("Bar \(cw >= 0 ? "+" : "")\(Int(cw)) / +\(Int(ch))", tint: .cyan)
+                    }
+                }
+                Text("Drag the sliders below or pick a preset — turn on Live Preview to watch your Dynamic Island resize in real time.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 5) {
+                    ForEach(presets, id: \.0) { name, pw, ph, pcw, pch in
+                        let selected = abs(w - pw) < 2 && abs(h - ph) < 5 && abs(cw - pcw) < 2 && abs(ch - pch) < 1
+                        Button(name) {
+                            settings.islandWidth = pw
+                            settings.islandHeight = ph
+                            settings.islandCompactWidthOffset = pcw
+                            settings.islandCompactHeightOffset = pch
+                        }
+                        .font(.system(size: 10, weight: .semibold))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .foregroundStyle(selected ? Color.white : Color.primary.opacity(0.85))
+                        .background(selected ? Color.accentColor : Color.primary.opacity(0.07), in: Capsule())
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            Spacer(minLength: 6)
+
+            VStack(alignment: .trailing, spacing: 6) {
+                Button(liveSizePreview ? "Stop Preview" : "Live Preview") {
+                    liveSizePreview.toggle()
+                    IslandState.shared?.setSizePreview(liveSizePreview)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+                .help("Keep the Dynamic Island Shade open while adjusting horizontal and vertical size")
+
+                Button("Reset") {
+                    settings.islandWidth = Double(IslandLayout.defaultShadeWidth)
+                    settings.islandHeight = Double(IslandLayout.defaultShadeHeight)
+                    settings.islandCompactWidthOffset = 0
+                    settings.islandCompactHeightOffset = 0
+                }
+                .controlSize(.small)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+    }
+
+    private var projectGridPreviewRow: some View {
+        let rows = settings.clampedGridRows
+        let cols = settings.clampedGridColumns
+        let slots = rows * cols
+        let presets: [(String, Int, Int)] = [
+            ("1×2", 1, 2), ("1×3", 1, 3), ("2×1", 2, 1),
+            ("2×2", 2, 2), ("2×3", 2, 3), ("3×2", 3, 2), ("3×3", 3, 3),
+        ]
+
+        return HStack(alignment: .center, spacing: 14) {
+            // Live miniature screen diagram of the configured Rows × Columns matrix
+            VStack(spacing: rows >= 3 ? 3 : 4) {
+                ForEach(0..<rows, id: \.self) { r in
+                    HStack(spacing: cols >= 3 ? 3 : 4) {
+                        ForEach(0..<cols, id: \.self) { c in
+                            let index = r * cols + c + 1
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                    .fill(Color.accentColor.opacity(0.22))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                            .strokeBorder(Color.accentColor.opacity(0.45), lineWidth: 0.75)
+                                    )
+                                Text("\(index)")
+                                    .font(.system(size: rows >= 4 || cols >= 4 ? 8 : 9.5, weight: .bold, design: .rounded))
+                                    .foregroundStyle(Color.accentColor)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(5)
+            .frame(width: 112, height: 70)
+            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(Color.primary.opacity(0.10), lineWidth: 1))
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Text("\(rows) Row\(rows == 1 ? "" : "s") × \(cols) Column\(cols == 1 ? "" : "s")")
+                        .font(.system(size: 12.5, weight: .semibold))
+                    trustChip("\(slots) slot\(slots == 1 ? "" : "s")", tint: .blue)
+                }
+                Text("Synced live with the Shade's Window Layout card, Menu Bar, and ⌃⌥G shortcut.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                HStack(spacing: 5) {
+                    ForEach(presets, id: \.0) { label, r, c in
+                        let selected = rows == r && cols == c
+                        Button(label) {
+                            settings.windowGridRows = r
+                            settings.windowGridColumns = c
+                        }
+                        .font(.system(size: 10, weight: .semibold, design: .rounded))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 3)
+                        .foregroundStyle(selected ? Color.white : Color.primary.opacity(0.85))
+                        .background(selected ? Color.accentColor : Color.primary.opacity(0.07), in: Capsule())
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            Spacer(minLength: 6)
+
+            Button("Tile Now") {
+                WindowManager.shared.tileCustomGrid()
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+            .help("Tile up to \(slots) open project windows into \(rows)×\(cols) right now")
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
     }
 
     private var notificationEngineRow: some View {

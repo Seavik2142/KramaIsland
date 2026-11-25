@@ -89,21 +89,25 @@ final class NotchPanel: NSPanel {
         }
     }
 
-    /// Called at launch and when screen configuration changes. Never called on hover.
+    /// Called at launch, when screen configuration changes, or when user changes island size in Settings.
+    /// Never called on hover.
     func reposition() {
         let geo = NotchGeometry.current
         state.geometry = geo
         let sf = geo.screen.frame
-        let height = min(Self.fixedHeight, sf.height)
-        let target = NSRect(x: (sf.midX - Self.fixedWidth / 2).rounded(),
+        let s = AppSettings.shared
+        let maxBodyW = max(IslandLayout.launcherWidth, s.clampedIslandWidth + 110)
+        let width = min(sf.width, max(Self.fixedWidth, maxBodyW + 84))
+        let height = min(sf.height, max(Self.fixedHeight, s.clampedIslandHeight + 230))
+        let target = NSRect(x: (sf.midX - width / 2).rounded(),
                             y: sf.maxY - height,
-                            width: Self.fixedWidth,
+                            width: width,
                             height: height)
         if frame != target {
             setFrame(target, display: false)
         }
         guard !hiddenByPolicy else { return }
-        if state.layout.isOpen {
+        if state.layout.isOpen && !state.isSizePreviewActive {
             makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
         } else {
@@ -113,7 +117,7 @@ final class NotchPanel: NSPanel {
 
     private func layoutChanged(_ layout: IslandLayout) {
         guard !hiddenByPolicy else { return }
-        if layout.isOpen {
+        if layout.isOpen && !state.isSizePreviewActive {
             makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
         } else {
@@ -134,7 +138,7 @@ final class NotchPanel: NSPanel {
             return event
         }
         globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            guard let self, self.state.layout.isOpen else { return }
+            guard let self, self.state.layout.isOpen, !self.state.isSizePreviewActive else { return }
             if !self.isPointInsideIsland(NSEvent.mouseLocation) {
                 if self.state.isLauncherOpen { self.state.closeLauncher() }
                 if self.state.isShadeOpen { self.state.closeShade() }
@@ -161,7 +165,7 @@ final class NotchPanel: NSPanel {
         let pt = NSEvent.mouseLocation
         let dragging = NSEvent.pressedMouseButtons != 0
         let inside = isPointInsideIsland(pt, extraMargin: dragging ? 18 : 0)
-        let shouldAcceptMouse = inside || state.isDragTargeted || state.volume.isScrubbingActive
+        let shouldAcceptMouse = inside || state.isDragTargeted || state.volume.isScrubbingActive || state.isResizingIsland
         if ignoresMouseEvents == shouldAcceptMouse {
             ignoresMouseEvents = !shouldAcceptMouse
         }
@@ -207,7 +211,7 @@ final class NotchPanel: NSPanel {
         switch layout.mode {
         case .collapsed, .compact:
             width = max(layout.surfaceWidth(geo), rendered.width)
-            height = max(geo.notchHeight, rendered.height)
+            height = max(layout.compactHeight(geo), rendered.height)
             horizontalPad = 6 + extraMargin
             bottomPad = 4 + extraMargin
         default:
@@ -228,6 +232,7 @@ final class NotchPanel: NSPanel {
 
     override func resignKey() {
         super.resignKey()
+        guard !state.isSizePreviewActive else { return }
         if ProcessInfo.processInfo.environment["KRAMAISLAND_DEBUG"] != nil {
             NSLog("KramaIsland: panel resigned key (frontmost: %@)", NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "?")
         }

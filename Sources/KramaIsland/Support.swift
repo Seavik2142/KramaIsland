@@ -46,6 +46,10 @@ final class AppSettings: ObservableObject {
     @Pref("accentHex", "#FFFFFF") var accentHex: String
     @Pref("translucentShade", false) var translucentShade: Bool
     @Pref("islandShadow", true) var islandShadow: Bool                     // a window's shadow under the open island
+    @Pref("islandWidth", 416.0) var islandWidth: Double                    // horizontal width of open island (360...760)
+    @Pref("islandHeight", 620.0) var islandHeight: Double                  // vertical scroll height of shade (320...860)
+    @Pref("islandCompactWidthOffset", 0.0) var islandCompactWidthOffset: Double   // extra compact/notch width (-10...160)
+    @Pref("islandCompactHeightOffset", 0.0) var islandCompactHeightOffset: Double // extra compact/notch height (0...24)
     @Pref("hotkeyKeyCode", 49) var hotkeyKeyCode: Int                       // Space
     @Pref("hotkeyModifiers", 524288) var hotkeyModifiers: Int                // ⌥ (NSEvent.ModifierFlags.option)
 
@@ -73,6 +77,8 @@ final class AppSettings: ObservableObject {
     @Pref("windowSnapEnabled", true) var windowSnapEnabled: Bool
     @Pref("windowSnapShortcuts", true) var windowSnapShortcuts: Bool
     @Pref("windowSnapGap", 6.0) var windowSnapGap: Double
+    @Pref("windowGridRows", 2) var windowGridRows: Int
+    @Pref("windowGridColumns", 2) var windowGridColumns: Int
 
     // Visibility
     @Pref("hideInFullscreen", false) var hideInFullscreen: Bool
@@ -102,6 +108,15 @@ final class AppSettings: ObservableObject {
     var hiddenAppIDs: Set<String> {
         Set(hiddenApps.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
     }
+
+    var clampedGridRows: Int { min(max(windowGridRows, 1), 4) }
+    var clampedGridColumns: Int { min(max(windowGridColumns, 1), 4) }
+    var customGridLabel: String { "\(clampedGridRows)×\(clampedGridColumns)" }
+
+    var clampedIslandWidth: CGFloat { CGFloat(min(max(islandWidth, 360), 760)) }
+    var clampedIslandHeight: CGFloat { CGFloat(min(max(islandHeight, 320), 860)) }
+    var clampedCompactWidthOffset: CGFloat { CGFloat(min(max(islandCompactWidthOffset, -10), 160)) }
+    var clampedCompactHeightOffset: CGFloat { CGFloat(min(max(islandCompactHeightOffset, 0), 24)) }
 
     var mutedNotificationAppIDs: Set<String> {
         Set(mutedNotificationApps.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })

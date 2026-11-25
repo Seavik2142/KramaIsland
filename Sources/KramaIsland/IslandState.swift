@@ -51,6 +51,10 @@ final class IslandState: ObservableObject {
     @Published private(set) var isQuiet = false { didSet { refreshLayout() } }
     @Published var showMirror = false
     @Published var showAllClipboard = false
+    /// Kept true while the user is live-previewing Dynamic Island dimensions from Settings.
+    @Published var isSizePreviewActive = false
+    /// True while directly dragging the Shade's corner resize handle.
+    var isResizingIsland = false
 
     /// Derived shape of the island; the view and the panel both read this.
     @Published private(set) var layout = IslandLayout()
@@ -180,6 +184,7 @@ final class IslandState: ObservableObject {
             .store(in: &cancellables)
         NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
             self?.refreshQuiet()
+            self?.refreshLayout()
         }
         refreshQuiet()
 
@@ -365,7 +370,26 @@ final class IslandState: ObservableObject {
         l.showsMedia = media != nil
         l.compactEars = ears
         l.showsFooter = footerNotification != nil || hint != nil
+        l.customWidth = settings.clampedIslandWidth
+        l.customHeight = settings.clampedIslandHeight
+        l.compactWidthOffset = settings.clampedCompactWidthOffset
+        l.compactHeightOffset = settings.clampedCompactHeightOffset
         if l != layout { layout = l }
+    }
+
+    func setSizePreview(_ active: Bool) {
+        isSizePreviewActive = active
+        if active {
+            if !isShadeOpen {
+                withAnimation(Motion.spring) {
+                    isLauncherOpen = false
+                    banner = nil
+                    isShadeOpen = true
+                }
+            }
+        } else if isShadeOpen {
+            closeShade()
+        }
     }
 
     private func updateHint(mediaProblem: String?) {
@@ -643,6 +667,7 @@ final class IslandState: ObservableObject {
     }
 
     func closeShade() {
+        isSizePreviewActive = false
         withAnimation(Motion.quick) { isShadeOpen = false }
         showMirror = false
     }
@@ -721,6 +746,7 @@ final class IslandState: ObservableObject {
             QuickAction(id: "tile.focus", title: "Tile 2 Apps (2/3 + 1/3)", symbol: "sidebar.right", keywords: ["tile", "focus", "split", "thirds", "window", "display"]) { WindowManager.shared.tile(.focusTwo) },
             QuickAction(id: "tile.3", title: "Tile 3 Apps in Columns", symbol: "rectangle.split.3x1.fill", keywords: ["tile", "3", "three", "columns", "thirds", "window", "display"]) { WindowManager.shared.tile(.threeColumns) },
             QuickAction(id: "tile.4", title: "Tile 4 Apps in 2×2 Grid", symbol: "rectangle.split.2x2.fill", keywords: ["tile", "4", "four", "grid", "quarters", "window", "display"]) { WindowManager.shared.tile(.gridFour) },
+            QuickAction(id: "tile.custom", title: "Tile Project Grid (Custom Rows × Cols)", symbol: "square.grid.3x2.fill", keywords: ["tile", "grid", "row", "rows", "col", "column", "columns", "custom", "project", "window", "layout"]) { WindowManager.shared.tileCustomGrid() },
             QuickAction(id: "clipboard.clear", title: "Clear Clipboard History", symbol: "doc.on.clipboard", keywords: ["clipboard", "clear", "copy", "wipe", "history"]) { [weak self] in self?.clipboard.clear() },
             QuickAction(id: "notifications.clear", title: "Clear All Notifications", symbol: "bell.slash", keywords: ["notifications", "clear", "dismiss", "alerts"]) { [weak self] in self?.clearAll() },
             QuickAction(id: "notifications.test", title: "Send Test Notification", symbol: "bell.badge.fill", keywords: ["notification", "test", "preview", "banner", "otp"]) { [weak self] in self?.sendTestNotification() },

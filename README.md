@@ -44,6 +44,7 @@ Built from scratch in **Swift, SwiftUI, AppKit, and CoreAudio** with zero extern
 
 ### Dynamic Island & Multi-Display
 - **Bezel-Matched Surface** — Measures the real physical notch from `NSScreen` with smooth concave top shoulders, balanced 34 pt live ears on notched MacBooks, and a unified compact Dynamic Island pill on non-notch and external monitors.
+- **Full Horizontal & Vertical Sizing** — Customize the open island width (`360–760 pt`), vertical height (`320–860 pt`), and compact bar extra width/height in **Settings ▸ General ▸ Dynamic Island Size** (with presets and real-time **Live Preview**), or drag the Shade's bottom-right corner grip directly.
 - **120 fps Zero-Lag Hover** — Instant hover readout with clock, Mic/Camera/Focus/Awake indicators, battery badge, active timer, upcoming calendar meeting, and Now Playing.
 - **Live Display Picker & Quiet Mode** — Pin the island to Auto, Main, or any specific connected monitor, hide over full-screen/selected apps, or silence popups via Quiet Mode (manual, 1-hour timer, or synced with macOS Focus).
 
@@ -52,9 +53,9 @@ Built from scratch in **Swift, SwiftUI, AppKit, and CoreAudio** with zero extern
 - **Native OSD Replacement** — Intercepts hardware **Volume Up**, **Volume Down**, and **Mute** keys via `CGEventTap` so macOS never shows its default volume popup while KramaIsland is active.
 - **Interactive 120 fps HUD** — Displays active output device icon & name (MacBook Pro Speakers, AirPods Pro, Headphones, etc.), click-to-mute speaker badge, spring-interpolated scrub bar, elastic 0%/100% limit bounce, and `⌥⇧` fine 1/64-step precision.
 
-### Windows 11-Style Snap Layouts & Multi-App Tiling
-- **Visual Snap Picker in the Shade** — Interactive mini-display layout diagrams for snapping the active window (`Left`, `Right`, `Top`, `Bottom`, `Fill`, `Center`, `Restore`) or tiling multiple apps simultaneously across one screen.
-- **Multi-App Presets** — One-click **2-App Split (50/50)**, **Focus Split (2/3 + 1/3)**, **3-Column**, and **2×2 Four-App Grid** layouts with configurable window gap spacing (`0 pt`, `6 pt`, `12 pt`).
+### Windows 11-Style Snap Layouts & Custom Project Grid (`Rows × Columns`)
+- **Custom Project Grid (`1–4 Rows × 1–4 Columns`)** — Configure your exact `Rows × Columns` workspace grid in **Settings ▸ General** (with live miniature preview & presets like `1×2`, `1×3`, `2×2`, `2×3`, `3×2`, `3×3`) or expand the Shade's `R×C` chip for an interactive clickable cell map (`R1·C1`, `R1·C2`, …) and inline steppers.
+- **Multi-App & Multi-Window Tiling** — One-click **2-App Split (50/50)**, **Focus Split (2/3 + 1/3)**, **3-Column**, and custom **`R×C` Project Grid** (`⌃⌥G`) tiling across both multiple apps and multiple windows of the same app, with configurable gap spacing (`0 pt`, `6 pt`, `12 pt`).
 - **Accessible Everywhere** — Trigger from the Shade, Menu Bar **Window Layout** submenu, `⌥ Space` Launcher, or global `⌃⌥` keyboard shortcuts.
 
 ### Universal Now Playing
@@ -124,6 +125,7 @@ scripts/make-dmg.sh 1.4.0     # builds dist/KramaIsland.app and dist/KramaIsland
 | `⌃ ⌥ C` | Center active window |
 | `⌃ ⌥ ⌫` | Restore window to previous size & position |
 | `⌃ ⌥ 2` / `3` / `4` | Tile 2 apps (50/50), 3 apps (columns), or 4 apps (2×2 grid) |
+| `⌃ ⌥ G` | Tile open project windows into your custom `Rows × Columns` grid |
 
 ---
 
@@ -133,9 +135,9 @@ scripts/make-dmg.sh 1.4.0     # builds dist/KramaIsland.app and dist/KramaIsland
 |---|---|---|---|
 | **Island** | True-black notch surface & concave bezel shoulders | ✅ | Pixel-accurate `NSScreen` notch + non-notch pill |
 | **Island** | 120 fps fixed-size click-through panel & hover | ✅ | Zero `NSWindow` resize lag; Reduce Motion supported |
-| **Island** | Multi-display placement & Quiet Mode | ✅ | Auto / Main / specific display; Focus-linked Quiet Mode |
+| **Island** | Multi-display placement, Quiet Mode & custom H/V resizing | ✅ | Auto / Main / specific display; Settings live-preview sliders + corner drag-to-resize |
 | **Volume** | Native CoreAudio HUD & macOS OSD replacement | ✅ | `CGEventTap` key interception, drag scrub, click-to-mute |
-| **Windows** | Snap layouts & 2/3/4-app multi-window tiling | ✅ | Shade diagram cards, Menu Bar, Launcher, `⌃⌥` hotkeys |
+| **Windows** | Snap layouts & custom `Rows × Columns` project grid tiling | ✅ | 1–4 Rows × 1–4 Cols, interactive Shade cell map, Menu Bar, Launcher & `⌃⌥` hotkeys |
 | **Media** | Universal Now Playing + multi-stream source chips | ✅ | System MediaRemote feed, Music, Spotify, VLC, Safari & Chromium |
 | **Alerts** | Universal notification mirroring, native banner takeover & OTP copy | ✅ | Dual-engine (WAL + Live AX), auto-dismisses macOS banners, queues bursts, category filters & per-app mute |
 | **Clipboard** | Boot-session clipboard history | ✅ | Auto-wipes on shutdown (`kern.boottime`) & skips secrets |

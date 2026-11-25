@@ -23,8 +23,16 @@ struct IslandLayout: Equatable {
     var showsFooter = false    // expanded content includes the recent-notification / hint line
     var compactEars = false    // compact state has something to show beside the notch
 
+    // User-configurable horizontal & vertical island dimensions (Settings ▸ General ▸ Dynamic Island Size).
+    var customWidth: CGFloat = IslandLayout.defaultShadeWidth
+    var customHeight: CGFloat = IslandLayout.defaultShadeHeight
+    var compactWidthOffset: CGFloat = 0
+    var compactHeightOffset: CGFloat = 0
+
     static let earWidth: CGFloat = 34
     static let nonNotchCompactWidth: CGFloat = 236
+    static let defaultShadeWidth: CGFloat = 416
+    static let defaultShadeHeight: CGFloat = 620
     static let shadeWidth: CGFloat = 416
     static let launcherWidth: CGFloat = 600
 
@@ -38,6 +46,29 @@ struct IslandLayout: Equatable {
     var isBanner: Bool { mode == .banner }
     var isOpen: Bool { mode == .shade || mode == .launcher }
 
+    /// Resting/compact vertical height of the Dynamic Island bar.
+    func compactHeight(_ geo: NotchGeometry) -> CGFloat {
+        geo.notchHeight + max(0, compactHeightOffset)
+    }
+
+    /// Horizontal ear width on notched MacBooks, incorporating any user compact-width adjustment.
+    func effectiveEarWidth(_ geo: NotchGeometry) -> CGFloat {
+        max(24, Self.earWidth + compactWidthOffset / 2)
+    }
+
+    /// Clamped vertical height budget for the Shade's scrollable content area on `geo.screen`.
+    func shadeScrollHeight(_ geo: NotchGeometry) -> CGFloat {
+        let maxOnScreen = max(240, geo.screen.visibleFrame.height - geo.notchHeight - 132)
+        return max(240, min(customHeight, maxOnScreen))
+    }
+
+    /// Clamped vertical height for the Launcher results list.
+    func launcherListHeight(_ geo: NotchGeometry) -> CGFloat {
+        let scaled = customHeight * 0.62
+        let maxOnScreen = max(220, geo.screen.visibleFrame.height - geo.notchHeight - 180)
+        return max(220, min(max(360, scaled), maxOnScreen))
+    }
+
     /// Outward concave fillet where the island meets the top bezel.
     var shoulderRadius: CGFloat {
         switch mode {
@@ -49,7 +80,7 @@ struct IslandLayout: Equatable {
 
     var cornerRadius: CGFloat {
         switch mode {
-        case .collapsed, .compact: return 11
+        case .collapsed, .compact: return compactHeightOffset > 6 ? 15 : 11
         case .volume: return 22
         case .activity: return 20
         default: return 28
@@ -59,20 +90,29 @@ struct IslandLayout: Equatable {
     /// Usable inner body width of the island (excluding top bezel shoulder flares).
     func bodyWidth(_ geo: NotchGeometry) -> CGFloat {
         let w = geo.notchWidth
+        let maxScreenBody = max(360, geo.screen.frame.width - 48)
+        let targetOpen = min(maxScreenBody, max(360, customWidth))
+
         switch mode {
         case .collapsed:
-            return w
+            return min(maxScreenBody, max(w, w + max(0, compactWidthOffset)))
         case .compact:
-            guard compactEars else { return w }
-            return geo.hasNotch ? w + 2 * Self.earWidth : Self.nonNotchCompactWidth
+            guard compactEars else {
+                return min(maxScreenBody, max(w, w + max(0, compactWidthOffset)))
+            }
+            if geo.hasNotch {
+                return min(maxScreenBody, w + 2 * effectiveEarWidth(geo))
+            } else {
+                return min(maxScreenBody, max(200, Self.nonNotchCompactWidth + compactWidthOffset))
+            }
         case .volume:
-            return min(Self.shadeWidth, max(w + 180, 366))
+            return min(targetOpen, max(w + 180, targetOpen * 0.88))
         case .activity:
-            return min(Self.shadeWidth, max(w + 220, 340))
+            return min(targetOpen, max(w + 220, targetOpen * 0.85))
         case .banner, .expanded, .shade:
-            return Self.shadeWidth
+            return targetOpen
         case .launcher:
-            return Self.launcherWidth
+            return min(maxScreenBody, max(Self.launcherWidth, targetOpen + 110))
         }
     }
 

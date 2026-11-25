@@ -105,6 +105,54 @@ enum WindowSnap: String, CaseIterable, Identifiable {
     }
 }
 
+/// One cell inside an arbitrary `rows × cols` workspace grid (0-indexed from top-left).
+struct WindowGridCell: Hashable, Identifiable {
+    let row: Int
+    let col: Int
+    let rows: Int
+    let cols: Int
+
+    var id: String { "\(rows)x\(cols)-\(row)-\(col)" }
+    var label: String { "R\(row + 1)·C\(col + 1)" }
+    var title: String { "Row \(row + 1), Col \(col + 1) (\(rows)×\(cols))" }
+
+    var normalizedRect: CGRect {
+        let w = 1.0 / CGFloat(max(1, cols))
+        let h = 1.0 / CGFloat(max(1, rows))
+        return CGRect(x: CGFloat(col) * w, y: CGFloat(row) * h, width: w, height: h)
+    }
+
+    func axFrame(in screen: NSScreen, gap: CGFloat) -> CGRect {
+        let vf = screen.visibleFrame
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? screen.frame.height
+        let axTop = primaryHeight - vf.maxY
+        let usable = CGRect(
+            x: vf.minX + gap,
+            y: axTop + gap,
+            width: max(100, vf.width - gap * 2),
+            height: max(100, vf.height - gap * 2)
+        )
+        let n = normalizedRect
+        let rawX = usable.minX + usable.width * n.minX
+        let rawY = usable.minY + usable.height * n.minY
+        let rawW = usable.width * n.width
+        let rawH = usable.height * n.height
+
+        let halfGap = gap / 2
+        let insetLeft = n.minX > 0.001 ? halfGap : 0
+        let insetRight = n.maxX < 0.999 ? halfGap : 0
+        let insetTop = n.minY > 0.001 ? halfGap : 0
+        let insetBottom = n.maxY < 0.999 ? halfGap : 0
+
+        return CGRect(
+            x: (rawX + insetLeft).rounded(),
+            y: (rawY + insetTop).rounded(),
+            width: max(120, (rawW - insetLeft - insetRight).rounded()),
+            height: max(100, (rawH - insetTop - insetBottom).rounded())
+        )
+    }
+}
+
 /// Multi-app workspace layouts: arrange 2, 3, or 4 platforms cleanly on one display with one click.
 enum MultiTilePreset: String, CaseIterable, Identifiable {
     case splitTwo      // 50% | 50%
@@ -305,6 +353,162 @@ final class WindowManager: ObservableObject {
         return true
     }
 
+    /// Snaps the active project window into a specific `(row, col)` cell of an arbitrary `rows × cols` grid.
+    @discardableResult
+    func snapToGrid(row: Int, col: Int, rows: Int? = nil, cols: Int? = nil, app explicitApp: NSRunningApplication? = nil) -> Bool {
+        guard ensureAccessibility() else { return false }
+        let s = AppSettings.shared
+        let totalRows = min(max(rows ?? s.clampedGridRows, 1), 4)
+        let totalCols = min(max(cols ?? s.clampedGridColumns, 1), 4)
+        let cell = WindowGridCell(
+            row: min(max(row, 0), totalRows - 1),
+            col: min(max(col, 0), totalCols - 1),
+            rows: totalRows,
+            cols: totalCols
+        )
+        guard let app = explicitApp ?? targetApp,
+              let window = focusedWindow(for: app.processIdentifier) else {
+            return false
+        }
+        if let current = windowFrame(window) {
+            previousFrames[app.processIdentifier] = current
+        }
+        let screen = screenFor(window: window)
+        let gap = CGFloat(s.windowSnapGap)
+        let target = cell.axFrame(in: screen, gap: gap)
+        let ok = apply(frame: target, to: window, pid: app.processIdentifier)
+        if ok {
+            app.activate(options: [])
+            Feedback.tap()
+            announce(symbol: "square.grid.3x2.fill", title: cell.title, subtitle: app.localizedName ?? "Window")
+        }
+        return ok
+    }
+
+    /// Tiles open project windows (across apps and multi-window apps) into the configured `rows × cols` grid.
+    @discardableResult
+    func tileCustomGrid(rows: Int? = nil, cols: Int? = nil) -> Bool {
+        guard ensureAccessibility() else { return false }
+        let s = AppSettings.shared
+        let totalRows = min(max(rows ?? s.clampedGridRows, 1), 4)
+        let totalCols = min(max(cols ?? s.clampedGridColumns, 1), 4)
+        let slotCount = totalRows * totalCols
+
+        let candidates = tileWindowCandidates(limit: slotCount)
+        guard !candidates.isEmpty else { return false }
+
+        let primaryScreen = candidates.first.map { screenFor(window: $0.window) } ?? NotchGeometry.current.screen
+        let gap = CGFloat(s.windowSnapGap)
+
+        var cells: [WindowGridCell] = []
+        for r in 0..<totalRows {
+            for c in 0..<totalCols {
+                cells.append(WindowGridCell(row: r, col: c, rows: totalRows, cols: totalCols))
+            }
+        }
+
+        var tiledNames: [String] = []
+        var activatedApps: [NSRunningApplication] = []
+        var seenPIDs = Set<pid_t>()
+
+        for (idx, item) in candidates.enumerated() {
+            guard idx < cells.count else { continue }
+            if previousFrames[item.app.processIdentifier] == nil, let current = windowFrame(item.window) {
+                previousFrames[item.app.processIdentifier] = current
+            }
+            if item.app.isHidden { item.app.unhide() }
+            let target = cells[idx].axFrame(in: primaryScreen, gap: gap)
+            if apply(frame: target, to: item.window, pid: item.app.processIdentifier) {
+                _ = AXUIElementPerformAction(item.window, kAXRaiseAction as CFString)
+                let name = item.app.localizedName ?? "App"
+                if !tiledNames.contains(name) { tiledNames.append(name) }
+                if seenPIDs.insert(item.app.processIdentifier).inserted {
+                    activatedApps.append(item.app)
+                }
+            }
+        }
+
+        for app in activatedApps.reversed() {
+            app.activate(options: [])
+        }
+        guard !tiledNames.isEmpty else { return false }
+        Feedback.tap()
+        announce(
+            symbol: "square.grid.3x2.fill",
+            title: "Tiled \(candidates.count) Window\(candidates.count == 1 ? "" : "s") (\(totalRows)×\(totalCols))",
+            subtitle: tiledNames.joined(separator: " · ")
+        )
+        return true
+    }
+
+    private struct TileWindowCandidate {
+        let app: NSRunningApplication
+        let window: AXUIElement
+    }
+
+    /// Collects up to `limit` visible standard windows: takes the primary window of each distinct
+    /// recent app first, then fills any remaining slots with additional open windows (e.g. a second
+    /// browser or IDE window for the same project).
+    private func tileWindowCandidates(limit: Int) -> [TileWindowCandidate] {
+        var orderedApps: [NSRunningApplication] = []
+        var seenPIDs = Set<pid_t>()
+
+        for app in recentApps where !app.isTerminated && !app.isHidden {
+            if seenPIDs.insert(app.processIdentifier).inserted { orderedApps.append(app) }
+        }
+        for app in NSWorkspace.shared.runningApplications
+        where app != NSRunningApplication.current && app.activationPolicy == .regular && !app.isHidden {
+            if seenPIDs.insert(app.processIdentifier).inserted { orderedApps.append(app) }
+        }
+
+        var perAppWindows: [(app: NSRunningApplication, windows: [AXUIElement])] = []
+        for app in orderedApps {
+            let wins = standardWindows(for: app.processIdentifier)
+            if !wins.isEmpty { perAppWindows.append((app, wins)) }
+        }
+
+        var result: [TileWindowCandidate] = []
+        var round = 0
+        while result.count < limit {
+            var addedThisRound = false
+            for entry in perAppWindows {
+                if round < entry.windows.count {
+                    result.append(TileWindowCandidate(app: entry.app, window: entry.windows[round]))
+                    addedThisRound = true
+                    if result.count >= limit { break }
+                }
+            }
+            if !addedThisRound { break }
+            round += 1
+        }
+        return result
+    }
+
+    private func standardWindows(for pid: pid_t) -> [AXUIElement] {
+        let appEl = AXUIElementCreateApplication(pid)
+        var listRef: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(appEl, kAXWindowsAttribute as CFString, &listRef) == .success,
+              let windows = listRef as? [AXUIElement] else {
+            return focusedWindow(for: pid).map { [$0] } ?? []
+        }
+        var valid: [AXUIElement] = []
+        for win in windows {
+            var subrole: CFTypeRef?
+            if AXUIElementCopyAttributeValue(win, kAXSubroleAttribute as CFString, &subrole) == .success,
+               let s = subrole as? String, s != (kAXStandardWindowSubrole as String) {
+                continue
+            }
+            var minimized: CFTypeRef?
+            if AXUIElementCopyAttributeValue(win, kAXMinimizedAttribute as CFString, &minimized) == .success,
+               (minimized as? Bool) == true {
+                continue
+            }
+            valid.append(win)
+        }
+        if valid.isEmpty, let focused = focusedWindow(for: pid) { return [focused] }
+        return valid
+    }
+
     func tileCandidates(limit: Int) -> [NSRunningApplication] {
         var result: [NSRunningApplication] = []
         var seen = Set<pid_t>()
@@ -348,6 +552,7 @@ final class WindowManager: ObservableObject {
         case 19:  DispatchQueue.main.async { self.tile(.splitTwo) }; return true      // ⌃⌥ 2
         case 20:  DispatchQueue.main.async { self.tile(.threeColumns) }; return true  // ⌃⌥ 3
         case 21:  DispatchQueue.main.async { self.tile(.gridFour) }; return true      // ⌃⌥ 4
+        case 5:   DispatchQueue.main.async { self.tileCustomGrid() }; return true     // ⌃⌥ G
         default: return false
         }
     }
@@ -445,20 +650,25 @@ final class WindowManager: ObservableObject {
 
 // MARK: - Windows 11-Style Snap Layouts Shade Card
 
-/// Visual Windows 11-inspired Snap Layouts card for the Shade: click any region in the four
-/// mini-display diagrams to snap the active app, or click a multi-app Tile preset to arrange
-/// 2, 3, or 4 platforms cleanly on one screen at once.
+/// Visual Windows 11-inspired Snap Layouts card for the Shade: click any region in the
+/// mini-display diagrams (including your custom Rows × Columns project grid) to snap the active
+/// app, or click a multi-app Tile preset to arrange all project windows on one screen at once.
 struct WindowSnapCard: View {
     @ObservedObject var manager: WindowManager
+    @ObservedObject private var settings = AppSettings.shared
+    @State private var showGridBuilder = false
     var onApplied: () -> Void = {}
 
     private var targetName: String {
         manager.targetApp?.localizedName ?? "Active Window"
     }
 
+    private var rows: Int { settings.clampedGridRows }
+    private var cols: Int { settings.clampedGridColumns }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Header with active target app + quick Fill / Center / Restore controls
+            // Header with active target app + live R×C grid toggle + Restore / Center / Fill
             HStack(spacing: 7) {
                 if let icon = manager.targetApp?.icon {
                     Image(nsImage: icon).resizable().interpolation(.high).frame(width: 16, height: 16)
@@ -474,6 +684,28 @@ struct WindowSnapCard: View {
                     .foregroundStyle(UI.secondaryText)
                     .lineLimit(1)
                 Spacer(minLength: 4)
+
+                Button {
+                    withAnimation(Motion.quick) { showGridBuilder.toggle() }
+                } label: {
+                    HStack(spacing: 3.5) {
+                        Image(systemName: "square.grid.3x2.fill")
+                            .font(.system(size: 8.5, weight: .bold))
+                        Text("\(rows)×\(cols)")
+                            .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                            .monospacedDigit()
+                        Image(systemName: showGridBuilder ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 7.5, weight: .bold))
+                    }
+                    .foregroundStyle(showGridBuilder ? .white : UI.info)
+                    .padding(.horizontal, 7)
+                    .frame(height: 22)
+                    .background(showGridBuilder ? UI.info.opacity(0.38) : UI.info.opacity(0.16), in: Capsule())
+                    .overlay(Capsule().strokeBorder(UI.info.opacity(showGridBuilder ? 0.65 : 0.30), lineWidth: 0.75))
+                }
+                .buttonStyle(.plain)
+                .help("Customize project grid Rows × Columns")
+
                 IconButton(symbol: "arrow.uturn.backward", size: 22, help: "Restore previous window size (⌃⌥⌫)") {
                     if manager.restore() { onApplied() }
                 }
@@ -485,58 +717,79 @@ struct WindowSnapCard: View {
                 }
             }
 
-            // Visual Windows 11 Snap Layout thumbnails (click any zone to snap)
-            HStack(spacing: 8) {
-                // 1. 50 / 50 Split
-                SnapDiagram {
-                    HStack(spacing: 3) {
-                        SnapZoneBox(snap: .leftHalf) { trigger($0) }
-                        SnapZoneBox(snap: .rightHalf) { trigger($0) }
+            if showGridBuilder {
+                customGridPanel
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            } else {
+                // Visual Windows 11 Snap Layout thumbnails (click any zone to snap)
+                HStack(spacing: 8) {
+                    // 1. 50 / 50 Split
+                    SnapDiagram {
+                        HStack(spacing: 3) {
+                            SnapZoneBox(snap: .leftHalf) { trigger($0) }
+                            SnapZoneBox(snap: .rightHalf) { trigger($0) }
+                        }
                     }
-                }
-                // 2. 2/3 + 1/3 Focus Split
-                SnapDiagram {
-                    GeometryReader { geo in
-                        let gap: CGFloat = 3
-                        let w = max(0, geo.size.width - gap)
-                        HStack(spacing: gap) {
-                            SnapZoneBox(snap: .leftTwoThirds) { trigger($0) }
-                                .frame(width: w * 0.65)
+                    // 2. 2/3 + 1/3 Focus Split
+                    SnapDiagram {
+                        GeometryReader { geo in
+                            let gap: CGFloat = 3
+                            let w = max(0, geo.size.width - gap)
+                            HStack(spacing: gap) {
+                                SnapZoneBox(snap: .leftTwoThirds) { trigger($0) }
+                                    .frame(width: w * 0.65)
+                                SnapZoneBox(snap: .rightThird) { trigger($0) }
+                                    .frame(width: w * 0.35)
+                            }
+                        }
+                    }
+                    // 3. 3 Equal Columns
+                    SnapDiagram {
+                        HStack(spacing: 3) {
+                            SnapZoneBox(snap: .leftThird) { trigger($0) }
+                            SnapZoneBox(snap: .centerThird) { trigger($0) }
                             SnapZoneBox(snap: .rightThird) { trigger($0) }
-                                .frame(width: w * 0.35)
+                        }
+                    }
+                    // 4. Live Custom Rows × Columns Grid (mirrors Settings)
+                    SnapDiagram {
+                        VStack(spacing: rows >= 3 ? 2 : 3) {
+                            ForEach(0..<rows, id: \.self) { r in
+                                HStack(spacing: cols >= 3 ? 2 : 3) {
+                                    ForEach(0..<cols, id: \.self) { c in
+                                        GridCellBox(
+                                            cell: WindowGridCell(row: r, col: c, rows: rows, cols: cols),
+                                            compact: true
+                                        ) { cell in
+                                            triggerGrid(cell)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
-                // 3. 3 Equal Columns
-                SnapDiagram {
-                    HStack(spacing: 3) {
-                        SnapZoneBox(snap: .leftThird) { trigger($0) }
-                        SnapZoneBox(snap: .centerThird) { trigger($0) }
-                        SnapZoneBox(snap: .rightThird) { trigger($0) }
-                    }
-                }
-                // 4. 2×2 Four-App Grid
-                SnapDiagram {
-                    VStack(spacing: 3) {
-                        HStack(spacing: 3) {
-                            SnapZoneBox(snap: .topLeft) { trigger($0) }
-                            SnapZoneBox(snap: .topRight) { trigger($0) }
-                        }
-                        HStack(spacing: 3) {
-                            SnapZoneBox(snap: .bottomLeft) { trigger($0) }
-                            SnapZoneBox(snap: .bottomRight) { trigger($0) }
-                        }
-                    }
-                }
+                .frame(height: 44)
             }
-            .frame(height: 44)
 
             // One-click Multi-App Workspace Tiling row
             HStack(spacing: 6) {
-                ForEach(MultiTilePreset.allCases) { preset in
-                    MultiTilePill(preset: preset) {
-                        if manager.tile(preset) { onApplied() }
-                    }
+                MultiTilePill(symbol: MultiTilePreset.splitTwo.symbol, label: "2 Split", help: MultiTilePreset.splitTwo.title) {
+                    if manager.tile(.splitTwo) { onApplied() }
+                }
+                MultiTilePill(symbol: MultiTilePreset.focusTwo.symbol, label: "2 Focus", help: MultiTilePreset.focusTwo.title) {
+                    if manager.tile(.focusTwo) { onApplied() }
+                }
+                MultiTilePill(symbol: MultiTilePreset.threeColumns.symbol, label: "3 Cols", help: MultiTilePreset.threeColumns.title) {
+                    if manager.tile(.threeColumns) { onApplied() }
+                }
+                MultiTilePill(
+                    symbol: "square.grid.3x2.fill",
+                    label: "\(rows)×\(cols) Grid",
+                    highlighted: true,
+                    help: "Tile up to \(rows * cols) project windows into \(rows) rows × \(cols) columns (⌃⌥G)"
+                ) {
+                    if manager.tileCustomGrid() { onApplied() }
                 }
             }
         }
@@ -544,8 +797,103 @@ struct WindowSnapCard: View {
         .islandCard(padding: 12)
     }
 
+    /// Expanded interactive project-grid controls inside the Shade: live Row/Column steppers
+    /// synced with Settings plus a full-width clickable R×C cell map.
+    private var customGridPanel: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                gridStepper(title: "Rows", value: Binding(
+                    get: { settings.clampedGridRows },
+                    set: { settings.windowGridRows = min(max($0, 1), 4) }
+                ))
+                gridStepper(title: "Cols", value: Binding(
+                    get: { settings.clampedGridColumns },
+                    set: { settings.windowGridColumns = min(max($0, 1), 4) }
+                ))
+                Spacer(minLength: 2)
+                Button {
+                    SettingsWindowController.shared.show(tab: "general")
+                } label: {
+                    Image(systemName: "slider.horizontal.3")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(UI.secondaryText)
+                        .frame(width: 24, height: 24)
+                        .background(UI.controlFill, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .help("More Window Layout options in Settings")
+            }
+
+            // Full-width clickable Rows × Columns project screen preview
+            VStack(spacing: 4) {
+                ForEach(0..<rows, id: \.self) { r in
+                    HStack(spacing: 4) {
+                        ForEach(0..<cols, id: \.self) { c in
+                            GridCellBox(
+                                cell: WindowGridCell(row: r, col: c, rows: rows, cols: cols),
+                                compact: false
+                            ) { cell in
+                                triggerGrid(cell)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(6)
+            .frame(height: max(58, CGFloat(rows) * 26 + 12))
+            .background(Color.white.opacity(0.045), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .strokeBorder(Color.white.opacity(0.09), lineWidth: 0.75))
+        }
+    }
+
+    private func gridStepper(title: String, value: Binding<Int>) -> some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(UI.secondaryText)
+            HStack(spacing: 2) {
+                Button {
+                    if value.wrappedValue > 1 { value.wrappedValue -= 1; Feedback.tap() }
+                } label: {
+                    Image(systemName: "minus")
+                        .font(.system(size: 9, weight: .bold))
+                        .frame(width: 20, height: 20)
+                        .background(Color.white.opacity(value.wrappedValue > 1 ? 0.12 : 0.04), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .disabled(value.wrappedValue <= 1)
+
+                Text("\(value.wrappedValue)")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .frame(width: 16)
+
+                Button {
+                    if value.wrappedValue < 4 { value.wrappedValue += 1; Feedback.tap() }
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 9, weight: .bold))
+                        .frame(width: 20, height: 20)
+                        .background(Color.white.opacity(value.wrappedValue < 4 ? 0.12 : 0.04), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .disabled(value.wrappedValue >= 4)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3.5)
+        .background(Color.white.opacity(0.06), in: Capsule())
+    }
+
     private func trigger(_ zone: WindowSnap) {
         if manager.snap(zone) { onApplied() }
+    }
+
+    private func triggerGrid(_ cell: WindowGridCell) {
+        if manager.snapToGrid(row: cell.row, col: cell.col, rows: cell.rows, cols: cell.cols) {
+            onApplied()
+        }
     }
 }
 
@@ -581,33 +929,74 @@ private struct SnapZoneBox: View {
     }
 }
 
+private struct GridCellBox: View {
+    let cell: WindowGridCell
+    let compact: Bool
+    let action: (WindowGridCell) -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button { action(cell) } label: {
+            ZStack {
+                RoundedRectangle(cornerRadius: compact ? 3 : 6, style: .continuous)
+                    .fill(hovering ? UI.info : Color.white.opacity(compact ? 0.18 : 0.14))
+                    .overlay(RoundedRectangle(cornerRadius: compact ? 3 : 6, style: .continuous)
+                        .strokeBorder(hovering ? Color.white.opacity(0.50) : Color.white.opacity(0.06), lineWidth: 0.75))
+                if !compact {
+                    Text(cell.label)
+                        .font(.system(size: 9.5, weight: .semibold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(hovering ? .white : .white.opacity(0.65))
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(Motion.quick, value: hovering)
+        .help("Snap active window to \(cell.title)")
+    }
+}
+
 private struct MultiTilePill: View {
-    let preset: MultiTilePreset
+    let symbol: String
+    let label: String
+    var highlighted: Bool = false
+    let help: String
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 4) {
-                Image(systemName: preset.symbol)
+                Image(systemName: symbol)
                     .font(.system(size: 9.5, weight: .semibold))
-                    .foregroundStyle(hovering ? .white : UI.info)
-                Text(preset.shortLabel)
+                    .foregroundStyle(hovering || highlighted ? .white : UI.info)
+                Text(label)
                     .font(.system(size: 10, weight: .semibold))
+                    .monospacedDigit()
                     .lineLimit(1)
             }
-            .foregroundStyle(.white.opacity(hovering ? 1 : 0.88))
+            .foregroundStyle(.white.opacity(hovering || highlighted ? 1 : 0.88))
             .frame(maxWidth: .infinity)
             .frame(height: 26)
-            .background(hovering ? UI.info.opacity(0.32) : UI.controlFill,
-                        in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .background(
+                hovering
+                    ? UI.info.opacity(0.36)
+                    : (highlighted ? UI.info.opacity(0.20) : UI.controlFill),
+                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            )
             .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(hovering ? UI.info.opacity(0.55) : Color.white.opacity(0.06), lineWidth: 0.75))
+                .strokeBorder(
+                    hovering
+                        ? UI.info.opacity(0.65)
+                        : (highlighted ? UI.info.opacity(0.35) : Color.white.opacity(0.06)),
+                    lineWidth: 0.75
+                ))
             .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .animation(Motion.quick, value: hovering)
-        .help(preset.title)
+        .help(help)
     }
 }

@@ -100,30 +100,34 @@ struct LauncherView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 32)
         } else {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(state.query.trimmingCharacters(in: .whitespaces).isEmpty ? "SUGGESTIONS" : "RESULTS")
-                    .font(UI.eyebrow)
-                    .tracking(0.8)
-                    .foregroundStyle(UI.tertiaryText)
-                    .padding(.horizontal, 12)
-                    .padding(.top, 4)
-                    .padding(.bottom, 4)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(state.query.trimmingCharacters(in: .whitespaces).isEmpty ? "SUGGESTIONS" : "RESULTS")
+                        .font(UI.eyebrow)
+                        .tracking(0.8)
+                        .foregroundStyle(UI.tertiaryText)
+                        .padding(.horizontal, 12)
+                        .padding(.top, 4)
+                        .padding(.bottom, 4)
 
-                ForEach(Array(results.enumerated()), id: \.element.id) { index, item in
-                    let isSelected = index == selection
-                    Group {
-                        if Self.isFeatured(item) {
-                            featuredRow(item, selected: isSelected)
-                        } else {
-                            standardRow(item, selected: isSelected)
+                    ForEach(Array(results.enumerated()), id: \.element.id) { index, item in
+                        let isSelected = index == selection
+                        Group {
+                            if Self.isFeatured(item) {
+                                featuredRow(item, selected: isSelected)
+                            } else {
+                                standardRow(item, selected: isSelected)
+                            }
                         }
+                        .onTapGesture { state.perform(item) }
+                        .onHover { if $0 { selection = index } }
                     }
-                    .onTapGesture { state.perform(item) }
-                    .onHover { if $0 { selection = index } }
                 }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .frame(maxHeight: state.layout.launcherListHeight(state.geometry))
+            .scrollIndicators(.never)
         }
     }
 

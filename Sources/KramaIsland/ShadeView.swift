@@ -13,6 +13,8 @@ struct ShadeContent: View {
     @ObservedObject var calendar: CalendarModule
     @State private var now = Date()
     @State private var copied: String?
+    @State private var resizeHovering = false
+    @State private var resizeStartSize: CGSize?
     private let clock = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
 
     init(state: IslandState) {
@@ -26,6 +28,8 @@ struct ShadeContent: View {
         VStack(spacing: 12) {
             grabber
             header
+            let scrollH = state.layout.shadeScrollHeight(state.geometry)
+            let isTallerThanDefault = settings.islandHeight > IslandLayout.defaultShadeHeight + 1
             ScrollView {
                 VStack(spacing: UI.stack) {
                     if settings.quickTogglesEnabled { QuickTogglesRow(state: state) }
@@ -58,7 +62,7 @@ struct ShadeContent: View {
                 }
                 .padding(.bottom, 2)
             }
-            .frame(maxHeight: 620)
+            .frame(minHeight: isTallerThanDefault ? scrollH : nil, maxHeight: scrollH)
             .scrollIndicators(.never)
         }
         .padding(.horizontal, 14)
@@ -66,7 +70,52 @@ struct ShadeContent: View {
         .padding(.bottom, 16)
         .frame(maxWidth: .infinity)
         .foregroundStyle(.white)
+        .overlay(alignment: .bottomTrailing) { resizeGrip }
         .onReceive(clock) { now = $0 }
+    }
+
+    /// Subtle bottom-right drag grip for direct horizontal & vertical resizing of the Dynamic Island.
+    private var resizeGrip: some View {
+        ZStack {
+            Path { p in
+                p.move(to: CGPoint(x: 13, y: 5))
+                p.addLine(to: CGPoint(x: 5, y: 13))
+                p.move(to: CGPoint(x: 13, y: 9.5))
+                p.addLine(to: CGPoint(x: 9.5, y: 13))
+            }
+            .stroke(Color.white.opacity(resizeHovering || resizeStartSize != nil ? 0.65 : 0.22),
+                    style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+            .frame(width: 16, height: 16)
+        }
+        .frame(width: 24, height: 24)
+        .contentShape(Rectangle())
+        .padding(.trailing, 7)
+        .padding(.bottom, 7)
+        .onHover { resizeHovering = $0 }
+        .gesture(
+            DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                .onChanged { value in
+                    if resizeStartSize == nil {
+                        resizeStartSize = CGSize(
+                            width: settings.clampedIslandWidth,
+                            height: settings.clampedIslandHeight
+                        )
+                        state.isResizingIsland = true
+                    }
+                    guard let start = resizeStartSize else { return }
+                    // Multiply horizontal delta by 2 because the island stays centered under the notch.
+                    let nextW = min(max(start.width + value.translation.width * 2, 360), 760)
+                    let nextH = min(max(start.height + value.translation.height, 320), 860)
+                    settings.islandWidth = Double((nextW / 2).rounded() * 2)
+                    settings.islandHeight = Double((nextH / 2).rounded() * 2)
+                }
+                .onEnded { _ in
+                    resizeStartSize = nil
+                    state.isResizingIsland = false
+                }
+        )
+        .animation(Motion.quick, value: resizeHovering)
+        .help("Drag to resize Dynamic Island horizontally & vertically")
     }
 
     private var grabber: some View {

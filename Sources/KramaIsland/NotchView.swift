@@ -112,14 +112,14 @@ struct NotchView: View {
     private func content(_ layout: IslandLayout, _ g: NotchGeometry) -> some View {
         switch layout.mode {
         case .collapsed:
-            Color.clear.frame(width: g.notchWidth, height: g.notchHeight)
+            Color.clear.frame(width: layout.bodyWidth(g), height: layout.compactHeight(g))
                 .islandBranch(.collapsed)
 
         case .compact:
             ZStack {
-                Color.clear.frame(height: g.notchHeight)
+                Color.clear.frame(height: layout.compactHeight(g))
                 if layout.compactEars {
-                    CompactEars(state: state, timer: state.timer, status: state.status, geo: g)
+                    CompactEars(state: state, timer: state.timer, status: state.status, geo: g, layout: layout)
                 }
             }
             .islandBranch(.compact)
@@ -398,14 +398,17 @@ struct CompactEars: View {
     @ObservedObject var timer: TimerEngine
     @ObservedObject var status: SystemStatus
     let geo: NotchGeometry
+    let layout: IslandLayout
 
     var body: some View {
+        let h = layout.compactHeight(geo)
+        let earW = layout.effectiveEarWidth(geo)
         Group {
             if geo.hasNotch {
                 HStack(spacing: 0) {
-                    leftEar.frame(width: IslandLayout.earWidth, height: geo.notchHeight)
+                    leftEar.frame(width: earW, height: h)
                     Spacer().frame(width: geo.notchWidth)
-                    rightEar.frame(width: IslandLayout.earWidth, height: geo.notchHeight)
+                    rightEar.frame(width: earW, height: h)
                 }
             } else {
                 HStack(spacing: 8) {
@@ -415,7 +418,7 @@ struct CompactEars: View {
                     rightEar
                 }
                 .padding(.horizontal, 10)
-                .frame(height: geo.notchHeight)
+                .frame(height: h)
             }
         }
         .foregroundStyle(.white)
