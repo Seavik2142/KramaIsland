@@ -62,7 +62,7 @@ Built from scratch in **Swift, SwiftUI, AppKit, and CoreAudio** with zero extern
 - **Rich Platform Awareness** — Detects streaming platforms (YouTube, YouTube Music, Spotify Web, SoundCloud, Twitch, Netflix, etc.), extracts dominant album-art color tint washes, lists multiple active streams as switchable chips, and jumps straight to the playing browser tab.
 
 ### Productivity & Utilities
-- **Notification Banners & Grouped Shade** — Mirrors macOS Notification Center alerts on-device with app-grouped history, Clear / Clear All, and optional body-preview privacy redaction.
+- **Universal Notification Center & Native Banner Takeover** — Dual-engine capture (Notification Center SQLite/WAL + Live `NotificationCenterUI` Accessibility observer) mirrors alerts from all apps and browsers, automatically closes macOS's original top-right banners so only KramaIsland shows, detects 2FA/OTP verification codes with one-click Copy, extracts meeting links (`Join Meeting`), queues alert bursts (`+N`), and organizes alerts into a filterable, collapsible grouped Shade with per-app mute and privacy body redaction.
 - **Boot-Session Clipboard History** — Tracks your recent copied text with source app icons, skips password-manager concealed/transient items, persists across app restarts within the current boot (`kern.boottime`), and **automatically wipes history and pasteboard on shutdown/restart**.
 - **Raycast-Style Launcher (`⌥ Space`)** — Fuzzy app search with frequency ranking, Spotlight file search, safe recursive-descent calculator, unit converter (`5 km to mi`, `100 f in c`), clipboard search (`clip`), and system quick actions.
 - **Calendar, Pomodoro Timer, File Shelf & Camera Mirror** — One-click Join buttons for Zoom/Meet/Teams/Webex, countdown ring in the notch ears, drag-and-drop File Shelf with AirDrop, and instant Camera Mirror check before meetings.
@@ -137,7 +137,7 @@ scripts/make-dmg.sh 1.4.0     # builds dist/KramaIsland.app and dist/KramaIsland
 | **Volume** | Native CoreAudio HUD & macOS OSD replacement | ✅ | `CGEventTap` key interception, drag scrub, click-to-mute |
 | **Windows** | Snap layouts & 2/3/4-app multi-window tiling | ✅ | Shade diagram cards, Menu Bar, Launcher, `⌃⌥` hotkeys |
 | **Media** | Universal Now Playing + multi-stream source chips | ✅ | System MediaRemote feed, Music, Spotify, VLC, Safari & Chromium |
-| **Alerts** | Notification mirroring & grouped shade | ✅ | On-device Notification Center WAL watcher + body redaction |
+| **Alerts** | Universal notification mirroring, native banner takeover & OTP copy | ✅ | Dual-engine (WAL + Live AX), auto-dismisses macOS banners, queues bursts, category filters & per-app mute |
 | **Clipboard** | Boot-session clipboard history | ✅ | Auto-wipes on shutdown (`kern.boottime`) & skips secrets |
 | **Activities** | Battery, AirPods/Bluetooth, Downloads, Timer, Calendar | ✅ | IOKit, IOBluetooth, `~/Downloads`, EventKit + Join links |
 | **Launcher** | Apps, Spotlight files, calculator, units, quick actions | ✅ | `⌥ Space` global tap; `clip`, `timer 25`, math & conversions |

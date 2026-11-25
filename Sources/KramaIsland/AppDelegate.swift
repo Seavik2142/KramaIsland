@@ -120,6 +120,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let trusted = AXIsProcessTrusted()
         if hotkey.isActive != trusted { installHotkey() }
         VolumeController.shared.rearmTapIfNeeded()
+        state.notificationWatcher.refreshLiveObserver()
         state.setAccessibilityGranted(trusted)
     }
 

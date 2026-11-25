@@ -61,7 +61,7 @@ enum Permission: String, CaseIterable, Identifiable {
 
     var purpose: String {
         switch self {
-        case .accessibility: return "Global ⌥ Space hotkey, replaces the native macOS volume HUD, window snapping, and browser media keys."
+        case .accessibility: return "Global ⌥ Space hotkey, replaces native macOS volume & notification banners, window snapping, and browser media keys."
         case .fullDiskAccess: return "Reads Notification Center's local database to mirror alerts on-device."
         case .calendar: return "Displays your next upcoming meeting and one-click Join link."
         case .camera: return "Powers the quick on-demand Camera Mirror check inside the shade."

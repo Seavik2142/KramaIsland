@@ -25,7 +25,7 @@ ROOT="dist/dmg-root"
 DMG="dist/KramaIsland.dmg"
 
 echo "▸ swift build -c release"
-swift build -c release 2>&1 | grep -E "error|warning: unre|Compiling|Build complete" || true
+swift build -c release
 BIN="$(swift build -c release --show-bin-path)/KramaIsland"
 [[ -x "$BIN" ]] || { echo "release binary not found at $BIN"; exit 1; }
 # The MediaRemote adapter (system Now Playing feed) is a dylib loaded by /usr/bin/perl, not by the

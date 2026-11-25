@@ -119,7 +119,7 @@ final class NotchPanel: NSPanel {
         } else {
             orderFrontRegardless()
         }
-        updateExpandedGuard(active: layout.mode == .expanded || layout.mode == .volume)
+        updateExpandedGuard(active: layout.mode == .expanded || layout.mode == .volume || layout.mode == .banner)
         syncPointerState(driveHover: false)
     }
 
@@ -176,6 +176,16 @@ final class NotchPanel: NSPanel {
             return
         } else {
             state.volume.setHUDHovered(false)
+        }
+        if state.layout.mode == .banner {
+            // Pause banner auto-dismiss and reveal quick actions cleanly without jumping into expanded hover.
+            state.setBannerHovered(inside)
+            if !inside && isPointerInside {
+                isPointerInside = false
+            }
+            return
+        } else {
+            state.setBannerHovered(false)
         }
         if inside != isPointerInside {
             isPointerInside = inside

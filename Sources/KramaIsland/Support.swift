@@ -52,6 +52,12 @@ final class AppSettings: ObservableObject {
     // Modules
     @Pref("mediaEnabled", true) var mediaEnabled: Bool
     @Pref("notificationsEnabled", true) var notificationsEnabled: Bool
+    @Pref("replaceSystemNotificationBanner", true) var replaceSystemNotificationBanner: Bool
+    @Pref("notificationBannerDuration", 6.0) var notificationBannerDuration: Double
+    @Pref("notificationDetectOTP", true) var notificationDetectOTP: Bool
+    @Pref("notificationUnreadDot", true) var notificationUnreadDot: Bool
+    @Pref("notificationSound", false) var notificationSound: Bool
+    @Pref("mutedNotificationApps", "") var mutedNotificationApps: String     // comma-separated bundleIDs/names
     @Pref("calendarEnabled", true) var calendarEnabled: Bool
     @Pref("timerEnabled", true) var timerEnabled: Bool
     @Pref("clipboardEnabled", true) var clipboardEnabled: Bool
@@ -95,6 +101,16 @@ final class AppSettings: ObservableObject {
 
     var hiddenAppIDs: Set<String> {
         Set(hiddenApps.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
+    }
+
+    var mutedNotificationAppIDs: Set<String> {
+        Set(mutedNotificationApps.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
+    }
+
+    func setNotificationAppMuted(_ id: String, muted: Bool) {
+        var set = mutedNotificationAppIDs
+        if muted { set.insert(id) } else { set.remove(id) }
+        mutedNotificationApps = set.sorted().joined(separator: ",")
     }
 
     /// Quiet Mode as switched by hand: on, and not past its "for an hour" deadline.

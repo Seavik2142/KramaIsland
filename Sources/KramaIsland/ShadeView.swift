@@ -51,9 +51,7 @@ struct ShadeContent: View {
                     if settings.shelfEnabled, !shelf.items.isEmpty { ShelfStrip(shelf: shelf) }
                     if settings.clipboardEnabled { clipboardSection }
                     if state.hasNotifications {
-                        ForEach(state.groups) { group in
-                            NotificationGroupCard(group: group, state: state)
-                        }
+                        NotificationHubSection(state: state)
                     } else if state.media == nil, !state.showMirror {
                         empty
                     }
@@ -346,27 +344,145 @@ struct QuickTogglesRow: View {
     }
 }
 
-// MARK: - Notification cards
+// MARK: - Notification Hub & Collapsible App Cards
+
+struct NotificationHubSection: View {
+    @ObservedObject var state: IslandState
+
+    private var categories: [NotchNotification.Category] {
+        state.availableNotificationCategories
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Section summary + smart category filter strip
+            HStack(spacing: 6) {
+                Image(systemName: "bell.badge.fill")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(UI.info)
+                Text("NOTIFICATIONS")
+                    .font(UI.eyebrow)
+                    .tracking(0.6)
+                    .foregroundStyle(UI.secondaryText)
+                Text("\(state.unreadCount)")
+                    .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(.white.opacity(0.88))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 1.5)
+                    .background(UI.controlFill, in: Capsule())
+                Spacer()
+            }
+            .padding(.horizontal, 4)
+            .padding(.top, 2)
+
+            if categories.count >= 2 {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        filterChip(title: "All", symbol: nil, selected: state.selectedNotificationCategory == nil) {
+                            withAnimation(Motion.quick) { state.selectedNotificationCategory = nil }
+                        }
+                        ForEach(categories) { cat in
+                            filterChip(title: cat.rawValue, symbol: cat.symbol, selected: state.selectedNotificationCategory == cat) {
+                                withAnimation(Motion.quick) {
+                                    state.selectedNotificationCategory = (state.selectedNotificationCategory == cat) ? nil : cat
+                                }
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 2)
+                }
+            }
+
+            ForEach(state.groups) { group in
+                NotificationGroupCard(group: group, state: state)
+            }
+        }
+    }
+
+    private func filterChip(title: String, symbol: String?, selected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                if let symbol {
+                    Image(systemName: symbol).font(.system(size: 9, weight: .semibold))
+                }
+                Text(title).font(.system(size: 10.5, weight: .semibold))
+            }
+            .foregroundStyle(selected ? Color.black : .white.opacity(0.84))
+            .padding(.horizontal, 9)
+            .frame(height: 23)
+            .background(selected ? Color.white.opacity(0.92) : UI.controlFill, in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+    }
+}
 
 struct NotificationGroupCard: View {
     let group: NotificationGroup
     @ObservedObject var state: IslandState
+    @State private var expanded = false
+    @State private var headerHovering = false
+
+    private static let collapsedLimit = 3
+
+    private var visibleNotes: [NotchNotification] {
+        expanded ? group.notes : Array(group.notes.prefix(Self.collapsedLimit))
+    }
+
+    private var hiddenCount: Int {
+        max(0, group.notes.count - Self.collapsedLimit)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Eyebrow(image: group.icon, group.appName, count: group.notes.count) {
-                IconButton(symbol: "xmark", size: 22, help: "Clear \(group.appName)") { state.dismissGroup(group) }
+                if headerHovering {
+                    IconButton(symbol: "bell.slash.fill", size: 22, help: "Mute \(group.appName) notifications") {
+                        state.muteNotifications(for: group.bundleID, appName: group.appName)
+                    }
+                    .transition(.opacity)
+                }
+                IconButton(symbol: "xmark", size: 22, help: "Clear \(group.appName)") {
+                    state.dismissGroup(group)
+                }
             }
             .padding(.bottom, 8)
+            .onHover { headerHovering = $0 }
+            .animation(Motion.quick, value: headerHovering)
 
-            ForEach(Array(group.notes.enumerated()), id: \.element.id) { index, note in
-                if index > 0 { HairlineDivider().padding(.vertical, 8) }
-                NotificationRow(note: note,
-                                onOpen: { state.open(note) },
-                                onDismiss: { state.dismiss(note) })
+            ForEach(Array(visibleNotes.enumerated()), id: \.element.id) { index, note in
+                if index > 0 { HairlineDivider().padding(.vertical, 6) }
+                NotificationRow(
+                    note: note,
+                    onOpen: { state.open(note) },
+                    onDismiss: { state.dismiss(note) },
+                    onMuteApp: { state.muteNotifications(for: note.bundleID, appName: note.appName) },
+                    onCopyOTP: { code in state.copyOTP(code) },
+                    onOpenURL: { url in state.openNotificationURL(url, note: note) }
+                )
+            }
+
+            if hiddenCount > 0 {
+                HairlineDivider().padding(.vertical, 6)
+                Button {
+                    withAnimation(Motion.quick) { expanded.toggle() }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 9, weight: .bold))
+                        Text(expanded ? "Show fewer" : "Show \(hiddenCount) more from \(group.appName)")
+                            .font(.system(size: 10.5, weight: .semibold))
+                        Spacer()
+                    }
+                    .foregroundStyle(UI.secondaryText)
+                    .padding(.vertical, 2)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
         }
-        .islandCard()
+        .islandCard(padding: 12)
     }
 }
 
@@ -374,30 +490,45 @@ struct NotificationRow: View {
     let note: NotchNotification
     let onOpen: () -> Void
     let onDismiss: () -> Void
+    let onMuteApp: () -> Void
+    let onCopyOTP: (String) -> Void
+    let onOpenURL: (URL) -> Void
+
     @ObservedObject private var settings = AppSettings.shared
+    @State private var hovering = false
+    @State private var copiedCode = false
 
     private var hideBody: Bool { settings.privacyHideNotificationBody }
     private var showsSubtitle: Bool { !hideBody && !note.title.isEmpty && !note.subtitle.isEmpty }
+    private var activeOTP: String? { (!hideBody && settings.notificationDetectOTP) ? note.otpCode : nil }
+    private var activeURL: URL? { hideBody ? nil : note.actionURL }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            HStack(alignment: .firstTextBaseline) {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .center, spacing: 6) {
                 Text(note.headline)
-                    .font(UI.title())
+                    .font(UI.title(12.5))
                     .lineLimit(1)
                 Spacer(minLength: 6)
-                Text(NotificationBannerView.relative(note.date))
-                    .font(UI.caption())
-                    .foregroundStyle(UI.secondaryText)
+                if hovering {
+                    IconButton(symbol: "xmark", size: 18, help: "Dismiss", action: onDismiss)
+                } else {
+                    Text(NotificationBannerView.relative(note.date))
+                        .font(UI.caption())
+                        .foregroundStyle(UI.secondaryText)
+                }
             }
+
             if showsSubtitle {
                 Text(note.subtitle)
                     .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white.opacity(0.84))
                     .lineLimit(1)
             }
+
             if hideBody {
                 HStack(spacing: 4) {
-                    Image(systemName: "lock.fill").font(.system(size: 9, weight: .semibold))
+                    Image(systemName: "lock.fill").font(.system(size: 9, weight: .semibold)).foregroundStyle(UI.warning)
                     Text("Notification content hidden")
                 }
                 .font(UI.body(11))
@@ -409,12 +540,73 @@ struct NotificationRow: View {
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            if activeOTP != nil || activeURL != nil {
+                HStack(spacing: 6) {
+                    if let code = activeOTP {
+                        Button {
+                            copiedCode = true
+                            onCopyOTP(code)
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { copiedCode = false }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: copiedCode ? "checkmark" : "key.fill")
+                                    .font(.system(size: 8.5, weight: .bold))
+                                Text(copiedCode ? "Copied" : "Copy \(code)")
+                                    .font(.system(size: 10, weight: .semibold, design: .rounded))
+                                    .monospacedDigit()
+                            }
+                            .foregroundStyle(copiedCode ? Color.black : .white)
+                            .padding(.horizontal, 8)
+                            .frame(height: 21)
+                            .background(copiedCode ? UI.success : UI.info.opacity(0.28), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if let url = activeURL {
+                        Button { onOpenURL(url) } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: note.isMeetingLink ? "video.fill" : "arrow.up.right")
+                                    .font(.system(size: 8.5, weight: .bold))
+                                Text(note.isMeetingLink ? "Join" : "Open Link")
+                                    .font(.system(size: 10, weight: .semibold))
+                            }
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 8)
+                            .frame(height: 21)
+                            .background((note.isMeetingLink ? UI.success : UI.info).opacity(0.24), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    Spacer()
+                }
+                .padding(.top, 3)
+            }
         }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 5)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(hovering ? Color.white.opacity(0.055) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 9, style: .continuous))
         .contentShape(Rectangle())
+        .onHover { hovering = $0 }
         .onTapGesture(perform: onOpen)
+        .animation(Motion.quick, value: hovering)
         .contextMenu {
-            Button("Open") { onOpen() }
+            Button("Open \(note.appName)") { onOpen() }
+            if let code = activeOTP {
+                Button("Copy Code \(code)") { onCopyOTP(code) }
+            }
+            if !hideBody {
+                Button("Copy Text") {
+                    let text = [note.title, note.subtitle, note.body].filter { !$0.isEmpty }.joined(separator: "\n")
+                    let pb = NSPasteboard.general
+                    pb.clearContents()
+                    pb.setString(text, forType: .string)
+                }
+            }
+            Divider()
+            Button("Mute \(note.appName) Notifications") { onMuteApp() }
             Button("Clear") { onDismiss() }
         }
     }

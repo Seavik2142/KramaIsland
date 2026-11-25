@@ -75,8 +75,7 @@ struct NotchView: View {
         .contentShape(shape)
         .onTapGesture {
             switch layout.mode {
-            case .banner: state.openBanner()
-            case .volume: break             // interactive volume HUD handles mute & drag directly
+            case .banner, .volume: break    // interactive HUD / banner handles its own taps & buttons
             case .activity:
                 if state.activity?.kind == .update {
                     state.activities.dismiss(id: "update")
@@ -145,11 +144,20 @@ struct NotchView: View {
             VStack(spacing: 0) {
                 notchClearance(g)
                 if let note = state.banner {
-                    NotificationBannerView(note: note,
-                                           onOpen: { state.openBanner() },
-                                           onDismiss: { state.dismissBanner() })
-                        .id(note.id)
-                        .transition(.opacity)
+                    NotificationBannerView(
+                        note: note,
+                        queueCount: state.bannerQueueCount,
+                        isHovered: state.isBannerHovered,
+                        duration: state.bannerDuration,
+                        onOpen: { state.openBanner() },
+                        onDismiss: { state.dismissBanner() },
+                        onOpenShade: { state.openShadeFromBanner() },
+                        onMuteApp: { state.muteNotifications(for: note.bundleID, appName: note.appName) },
+                        onCopyOTP: { code in state.copyOTP(code, dismissBannerAfter: true) },
+                        onOpenURL: { url in state.openNotificationURL(url, note: note) }
+                    )
+                    .id(note.id)
+                    .transition(.opacity)
                 }
             }
             .islandBranch(.banner)
@@ -253,7 +261,7 @@ struct NotchView: View {
     }
 
     private var notificationsButton: some View {
-        let count = state.groups.reduce(0) { $0 + $1.notes.count }
+        let count = state.unreadCount
         return IconButton(symbol: "bell.fill", size: 28, help: "Open Shade") { state.toggleShade() }
             .overlay(alignment: .topTrailing) {
                 if count > 0 {
@@ -269,21 +277,43 @@ struct NotchView: View {
     }
 
     private func recentRow(_ note: NotchNotification) -> some View {
-        let line = settings.privacyHideNotificationBody
+        let hide = settings.privacyHideNotificationBody
+        let line = hide
             ? note.headline
             : note.headline + (note.body.isEmpty ? "" : " · " + note.body)
         return HStack(spacing: 10) {
-            Image(nsImage: note.icon).resizable().frame(width: 24, height: 24)
+            Image(nsImage: note.icon)
+                .resizable()
+                .interpolation(.high)
+                .frame(width: 24, height: 24)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
             VStack(alignment: .leading, spacing: 1) {
-                Text(note.appName.uppercased()).font(UI.eyebrow).tracking(0.5).foregroundStyle(UI.secondaryText)
+                HStack(spacing: 5) {
+                    Circle().fill(note.category.tint).frame(width: 4.5, height: 4.5)
+                    Text(note.sourceLabel.uppercased()).font(UI.eyebrow).tracking(0.5).foregroundStyle(UI.secondaryText)
+                }
                 Text(line)
                     .font(UI.body(11))
                     .lineLimit(1)
             }
             Spacer(minLength: 4)
-            Text(NotificationBannerView.relative(note.date))
-                .font(UI.caption())
-                .foregroundStyle(UI.secondaryText)
+            if !hide, settings.notificationDetectOTP, let code = note.otpCode {
+                Button { state.copyOTP(code) } label: {
+                    Text(code)
+                        .font(.system(size: 9.5, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 7)
+                        .frame(height: 20)
+                        .background(UI.info.opacity(0.32), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .help("Copy verification code \(code)")
+            } else {
+                Text(NotificationBannerView.relative(note.date))
+                    .font(UI.caption())
+                    .foregroundStyle(UI.secondaryText)
+            }
             IconButton(symbol: "xmark", size: 20, help: "Clear") { state.clearLatest() }
         }
         .padding(.horizontal, 12)
@@ -421,6 +451,11 @@ struct CompactEars: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(UI.camera)
                 .lineLimit(1)
+        } else if AppSettings.shared.notificationUnreadDot, state.hasNotifications {
+            Text("\(state.unreadCount) Alert\(state.unreadCount == 1 ? "" : "s")")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.88))
+                .lineLimit(1)
         }
     }
 
@@ -452,6 +487,8 @@ struct CompactEars: View {
             earGlyph("mic.fill", UI.mic)
         } else if status.cameraInUse {
             earGlyph("video.fill", UI.camera)
+        } else if AppSettings.shared.notificationUnreadDot, state.hasNotifications {
+            earGlyph("bell.badge.fill", UI.danger)
         }
     }
 
@@ -468,7 +505,7 @@ struct CompactEars: View {
                 .monospacedDigit()
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
-        } else {
+        } else if status.micInUse || status.cameraInUse || status.focusName != nil {
             HStack(spacing: 4) {
                 if status.micInUse { Circle().fill(UI.mic).frame(width: 7, height: 7) }
                 if status.cameraInUse { Circle().fill(UI.camera).frame(width: 7, height: 7) }
@@ -476,6 +513,14 @@ struct CompactEars: View {
                     Image(systemName: "moon.fill").font(.system(size: 8.5, weight: .semibold)).foregroundStyle(UI.focus)
                 }
             }
+        } else if AppSettings.shared.notificationUnreadDot, state.hasNotifications {
+            Text(state.unreadCount > 9 ? "9+" : "\(state.unreadCount)")
+                .font(.system(size: 9, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(.white)
+                .padding(.horizontal, 5.5)
+                .frame(minWidth: 16, minHeight: 16)
+                .background(UI.danger, in: Capsule())
         }
     }
 

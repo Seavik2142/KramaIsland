@@ -15,10 +15,12 @@ struct NotificationGroup: Identifiable {
     let appName: String
     let notes: [NotchNotification]
     var id: String { bundleID }
-    var icon: NSImage { AppIconCache.icon(for: bundleID) }
+    var icon: NSImage { AppIconCache.icon(for: bundleID, appName: appName) }
 }
 
 final class IslandState: ObservableObject {
+    static weak var shared: IslandState?
+
     // Inputs
     @Published var isExpanded = false { didSet { hoverChanged() } }
     @Published var isLauncherOpen = false { didSet { refreshLayout() } }
@@ -30,9 +32,12 @@ final class IslandState: ObservableObject {
     // Media, notifications, activities
     @Published private(set) var media: NowPlaying? { didSet { refreshLayout() } }
     @Published private(set) var banner: NotchNotification? { didSet { refreshLayout() } }
+    @Published private(set) var bannerQueueCount = 0
+    @Published private(set) var isBannerHovered = false
     @Published private(set) var latest: NotchNotification? { didSet { refreshLayout() } }
-    @Published private(set) var recent: [NotchNotification] = []
-    @Published private(set) var dismissed: Set<String> = []
+    @Published private(set) var recent: [NotchNotification] = [] { didSet { refreshLayout() } }
+    @Published private(set) var dismissed: Set<String> = [] { didSet { refreshLayout() } }
+    @Published var selectedNotificationCategory: NotchNotification.Category? = nil
     @Published private(set) var hint: IslandHint? { didSet { refreshLayout() } }
     @Published private(set) var activity: LiveActivity? { didSet { refreshLayout() } }
     @Published private(set) var stickyActivity: LiveActivity? { didSet { refreshLayout() } }
@@ -75,6 +80,8 @@ final class IslandState: ObservableObject {
     private let custom = CustomActivityWatcher()
 
     private var bannerTimer: DispatchWorkItem?
+    private var bannerQueue: [NotchNotification] = []
+    private var testSampleIndex = 0
     private var hoverWork: DispatchWorkItem?
     private var quietExpiry: DispatchWorkItem?
     private var notificationProblem: IslandHint?
@@ -87,6 +94,7 @@ final class IslandState: ObservableObject {
     static let recentLifetime: TimeInterval = 600
 
     init() {
+        Self.shared = self
         loadApps()
         bind()
         launcher.actions = quickActions()
@@ -125,6 +133,13 @@ final class IslandState: ObservableObject {
 
         notificationWatcher.onNotification = { [weak self] in self?.present($0) }
         notificationWatcher.onHistory = { [weak self] in self?.loadHistory($0) }
+        notificationWatcher.shouldReplaceSystemBanner = { [weak self] in
+            guard let self else { return false }
+            return self.settings.notificationsEnabled
+                && self.settings.replaceSystemNotificationBanner
+                && !self.isQuiet
+                && !self.volume.isIslandHiddenByPolicy
+        }
         notificationWatcher.onStatus = { [weak self] problem in
             guard let self else { return }
             self.notificationProblem = problem
@@ -285,20 +300,39 @@ final class IslandState: ObservableObject {
 
     var visibleRecent: [NotchNotification] {
         guard settings.notificationsEnabled else { return [] }
-        return recent.filter { !dismissed.contains($0.id) }.sorted { $0.date > $1.date }
+        let muted = settings.mutedNotificationAppIDs
+        return recent
+            .filter { !dismissed.contains($0.id) && !muted.contains($0.bundleID) && !muted.contains($0.appName.lowercased()) }
+            .sorted { $0.date > $1.date }
     }
+
+    var unreadCount: Int { visibleRecent.count }
 
     var hasNotifications: Bool { !visibleRecent.isEmpty }
 
+    var availableNotificationCategories: [NotchNotification.Category] {
+        let present = Set(visibleRecent.map(\.category))
+        return NotchNotification.Category.allCases.filter { present.contains($0) }
+    }
+
     var groups: [NotificationGroup] {
+        let filtered: [NotchNotification]
+        if let cat = selectedNotificationCategory {
+            let matching = visibleRecent.filter { $0.category == cat }
+            filtered = matching.isEmpty ? visibleRecent : matching
+        } else {
+            filtered = visibleRecent
+        }
         var order: [String] = []
         var map: [String: [NotchNotification]] = [:]
-        for note in visibleRecent {
+        for note in filtered {
             if map[note.bundleID] == nil { order.append(note.bundleID); map[note.bundleID] = [] }
             map[note.bundleID]?.append(note)
         }
         return order.map { NotificationGroup(bundleID: $0, appName: map[$0]!.first!.appName, notes: map[$0]!) }
     }
+
+    var bannerDuration: TimeInterval { max(2.5, settings.notificationBannerDuration) }
 
     var footerNotification: NotchNotification? {
         guard settings.notificationsEnabled, let latest, !dismissed.contains(latest.id),
@@ -317,7 +351,8 @@ final class IslandState: ObservableObject {
 
     private func refreshLayout() {
         var l = IslandLayout()
-        let ears = (media != nil || timerActive || indicatorsOn || stickyActivity != nil)
+        let unreadEar = settings.notificationsEnabled && settings.notificationUnreadDot && hasNotifications
+        let ears = (media != nil || timerActive || indicatorsOn || stickyActivity != nil || unreadEar)
             && !(isQuiet && settings.quietHidesEars)
         l.mode = isLauncherOpen ? .launcher
                : isShadeOpen ? .shade
@@ -404,26 +439,139 @@ final class IslandState: ObservableObject {
 
     private func present(_ note: NotchNotification) {
         guard settings.notificationsEnabled else { return }
-        if !recent.contains(where: { $0.id == note.id }) { recent.insert(note, at: 0) }
+        let muted = settings.mutedNotificationAppIDs
+        guard !muted.contains(note.bundleID), !muted.contains(note.appName.lowercased()) else { return }
+
+        if !recent.contains(where: { $0.id == note.id || ($0.dedupeKey == note.dedupeKey && abs($0.date.timeIntervalSince(note.date)) < 15) }) {
+            recent.insert(note, at: 0)
+        }
         trimRecent()
         latest = note
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.recentLifetime + 1) { [weak self] in
             self?.refreshLayout()
         }
         guard !isShadeOpen, !isLauncherOpen, !isQuiet else { return }
+
+        if settings.notificationSound {
+            NSSound(named: "Pop")?.play()
+        } else {
+            Feedback.tap()
+        }
+
+        // Queue rapid bursts instead of overwriting the visible banner.
+        if let current = banner, current.id != note.id {
+            if !bannerQueue.contains(where: { $0.id == note.id || $0.dedupeKey == note.dedupeKey }) {
+                bannerQueue.append(note)
+                if bannerQueue.count > 12 { bannerQueue.removeFirst() }
+                bannerQueueCount = bannerQueue.count
+            }
+            return
+        }
+
         withAnimation(Motion.spring) { banner = note }
-        Feedback.tap()
-        if isExpanded { bannerTimer?.cancel() } else { scheduleBannerDismiss(after: 6) }
+        if isBannerHovered { bannerTimer?.cancel() } else { scheduleBannerDismiss(after: bannerDuration) }
     }
 
     private func trimRecent() {
         recent.sort { $0.date > $1.date }
-        if recent.count > 80 { recent.removeLast(recent.count - 80) }
+        if recent.count > 100 { recent.removeLast(recent.count - 100) }
+    }
+
+    func setBannerHovered(_ hovering: Bool) {
+        guard hovering != isBannerHovered else { return }
+        isBannerHovered = hovering
+        guard banner != nil else { return }
+        if hovering {
+            bannerTimer?.cancel()
+        } else {
+            scheduleBannerDismiss(after: 1.5)
+        }
     }
 
     func dismissBanner() {
         bannerTimer?.cancel()
+        if !bannerQueue.isEmpty {
+            let next = bannerQueue.removeFirst()
+            bannerQueueCount = bannerQueue.count
+            withAnimation(Motion.spring) { banner = next }
+            if !isBannerHovered { scheduleBannerDismiss(after: bannerDuration) }
+            return
+        }
+        isBannerHovered = false
         withAnimation(Motion.quick) { banner = nil }
+    }
+
+    func openShadeFromBanner() {
+        bannerTimer?.cancel()
+        bannerQueue.removeAll()
+        bannerQueueCount = 0
+        isBannerHovered = false
+        openShade()
+    }
+
+    func muteNotifications(for bundleID: String, appName: String) {
+        settings.setNotificationAppMuted(bundleID, muted: true)
+        bannerQueue.removeAll { $0.bundleID == bundleID }
+        bannerQueueCount = bannerQueue.count
+        if banner?.bundleID == bundleID { dismissBanner() }
+        if latest?.bundleID == bundleID { latest = nil }
+        Feedback.tap()
+        refreshLayout()
+    }
+
+    func copyOTP(_ code: String, dismissBannerAfter: Bool = false) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(code, forType: .string)
+        Feedback.tap()
+        if dismissBannerAfter {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) { [weak self] in
+                self?.dismissBanner()
+            }
+        }
+    }
+
+    func openNotificationURL(_ url: URL, note: NotchNotification) {
+        NSWorkspace.shared.open(url)
+        dismiss(note)
+        if banner?.id == note.id { dismissBanner() }
+    }
+
+    /// Fires a realistic sample notification right through KramaIsland's banner & shade pipeline.
+    func sendTestNotification() {
+        let now = Date()
+        let samples: [NotchNotification] = [
+            NotchNotification(
+                id: "test.\(UUID().uuidString)",
+                bundleID: "com.apple.MobileSMS",
+                appName: "Messages",
+                title: "Security Verification",
+                subtitle: "Apple ID",
+                body: "Your verification code is 482910. Never share this code with anyone.",
+                date: now
+            ),
+            NotchNotification(
+                id: "test.\(UUID().uuidString)",
+                bundleID: "com.apple.iCal",
+                appName: "Calendar",
+                title: "Product Design Sync",
+                subtitle: "Starts in 5 minutes",
+                body: "Join Google Meet: https://meet.google.com/krm-isld-pro",
+                date: now
+            ),
+            NotchNotification(
+                id: "test.\(UUID().uuidString)",
+                bundleID: "com.apple.mail",
+                appName: "Mail",
+                title: "GitHub · Seavik2142/KramaIsland",
+                subtitle: "Release v1.4.0 Published",
+                body: "Your signed build and DMG are live and ready for macOS users.",
+                date: now
+            ),
+        ]
+        let sample = samples[testSampleIndex % samples.count]
+        testSampleIndex += 1
+        present(sample)
     }
 
     func openBanner() {
@@ -438,7 +586,7 @@ final class IslandState: ObservableObject {
             NSWorkspace.shared.openApplication(at: url, configuration: config)
         }
         dismiss(note)
-        dismissBanner()
+        if banner?.id == note.id { dismissBanner() }
     }
 
     func dismiss(_ note: NotchNotification) {
@@ -456,9 +604,14 @@ final class IslandState: ObservableObject {
     }
 
     func clearAll() {
+        bannerTimer?.cancel()
+        bannerQueue.removeAll()
+        bannerQueueCount = 0
         withAnimation(Motion.quick) {
             dismissed.formUnion(recent.map(\.id))
             latest = nil
+            banner = nil
+            selectedNotificationCategory = nil
         }
         Feedback.tap()
     }
@@ -569,6 +722,8 @@ final class IslandState: ObservableObject {
             QuickAction(id: "tile.3", title: "Tile 3 Apps in Columns", symbol: "rectangle.split.3x1.fill", keywords: ["tile", "3", "three", "columns", "thirds", "window", "display"]) { WindowManager.shared.tile(.threeColumns) },
             QuickAction(id: "tile.4", title: "Tile 4 Apps in 2×2 Grid", symbol: "rectangle.split.2x2.fill", keywords: ["tile", "4", "four", "grid", "quarters", "window", "display"]) { WindowManager.shared.tile(.gridFour) },
             QuickAction(id: "clipboard.clear", title: "Clear Clipboard History", symbol: "doc.on.clipboard", keywords: ["clipboard", "clear", "copy", "wipe", "history"]) { [weak self] in self?.clipboard.clear() },
+            QuickAction(id: "notifications.clear", title: "Clear All Notifications", symbol: "bell.slash", keywords: ["notifications", "clear", "dismiss", "alerts"]) { [weak self] in self?.clearAll() },
+            QuickAction(id: "notifications.test", title: "Send Test Notification", symbol: "bell.badge.fill", keywords: ["notification", "test", "preview", "banner", "otp"]) { [weak self] in self?.sendTestNotification() },
             QuickAction(id: "volume.mute", title: "Toggle Mute Volume", symbol: "speaker.slash.fill", keywords: ["volume", "mute", "unmute", "sound", "audio"]) { [weak self] in self?.volume.toggleMute(showHUD: true) },
             QuickAction(id: "volume.up", title: "Volume Up", symbol: "speaker.wave.3.fill", keywords: ["volume", "louder", "up", "sound", "audio"]) { [weak self] in self?.volume.step(up: true) },
             QuickAction(id: "volume.down", title: "Volume Down", symbol: "speaker.wave.1.fill", keywords: ["volume", "quieter", "down", "sound", "audio"]) { [weak self] in self?.volume.step(up: false) },

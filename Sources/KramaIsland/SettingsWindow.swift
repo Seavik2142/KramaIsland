@@ -458,9 +458,106 @@ struct SettingsView: View {
                 SettingToggleRow(
                     symbol: "bell.badge.fill", tint: .red,
                     title: "Notifications",
-                    subtitle: "Drop-in notch banners and app-grouped notification shade",
+                    subtitle: "Dual-engine capture (Full Disk Access + Live Banners) with OTP copy & grouped shade",
                     isOn: $settings.notificationsEnabled
                 )
+                if settings.notificationsEnabled {
+                    SettingDivider()
+                    notificationEngineRow
+                    SettingDivider()
+                    SettingRow(
+                        symbol: "eye.slash.fill", tint: .purple,
+                        title: "Replace native macOS notification banners",
+                        subtitle: (perms[.accessibility]?.isGranted ?? false)
+                            ? "Active — closes the top-right macOS banner so only KramaIsland shows"
+                            : "Closes the original macOS banner when mirrored (requires Accessibility permission)"
+                    ) {
+                        HStack(spacing: 8) {
+                            if settings.replaceSystemNotificationBanner {
+                                if perms[.accessibility]?.isGranted ?? false {
+                                    trustChip("Active", tint: .green)
+                                } else {
+                                    Button("Allow…") { Permissions.ask(.accessibility) }
+                                        .controlSize(.small)
+                                }
+                            }
+                            Toggle("", isOn: $settings.replaceSystemNotificationBanner)
+                                .labelsHidden()
+                                .toggleStyle(.switch)
+                                .controlSize(.small)
+                        }
+                    }
+                    SettingDivider()
+                    SettingRow(
+                        symbol: "timer", tint: .orange,
+                        title: "Banner display duration",
+                        subtitle: "How long drop-in banners stay visible before collapsing (hover pauses)"
+                    ) {
+                        Picker("", selection: $settings.notificationBannerDuration) {
+                            Text("3 seconds").tag(3.0)
+                            Text("6 seconds").tag(6.0)
+                            Text("9 seconds").tag(9.0)
+                            Text("12 seconds").tag(12.0)
+                        }
+                        .labelsHidden()
+                        .frame(width: 120)
+                    }
+                    SettingDivider()
+                    SettingToggleRow(
+                        symbol: "key.fill", tint: .cyan,
+                        title: "Smart verification code (OTP) copy",
+                        subtitle: "Automatically shows a one-click Copy pill when a 2FA code arrives",
+                        isOn: $settings.notificationDetectOTP
+                    )
+                    SettingDivider()
+                    SettingToggleRow(
+                        symbol: "circle.badge.fill", tint: .red,
+                        title: "Unread badge in compact notch",
+                        subtitle: "Shows a subtle bell & unread count in the ears while alerts wait in the Shade",
+                        isOn: $settings.notificationUnreadDot
+                    )
+                    SettingDivider()
+                    SettingToggleRow(
+                        symbol: "speaker.wave.2.fill", tint: .pink,
+                        title: "Subtle alert chime",
+                        subtitle: "Plays a soft pop sound when mirrored notifications drop into the island",
+                        isOn: $settings.notificationSound
+                    )
+                    if !settings.mutedNotificationAppIDs.isEmpty {
+                        SettingDivider()
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Muted Apps")
+                                    .font(.system(size: 12, weight: .semibold))
+                                Spacer()
+                                Button("Unmute All") { settings.mutedNotificationApps = "" }
+                                    .controlSize(.small)
+                            }
+                            FlowLayout(spacing: 6) {
+                                ForEach(Array(settings.mutedNotificationAppIDs).sorted(), id: \.self) { id in
+                                    Button {
+                                        settings.setNotificationAppMuted(id, muted: false)
+                                    } label: {
+                                        HStack(spacing: 5) {
+                                            Text(AppIconCache.name(for: id))
+                                                .font(.system(size: 10.5, weight: .medium))
+                                            Image(systemName: "xmark")
+                                                .font(.system(size: 8.5, weight: .bold))
+                                                .foregroundStyle(.secondary)
+                                        }
+                                        .padding(.horizontal, 8)
+                                        .padding(.vertical, 4)
+                                        .background(Color.primary.opacity(0.08), in: Capsule())
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("Unmute \(AppIconCache.name(for: id))")
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                    }
+                }
                 SettingDivider()
                 SettingToggleRow(
                     symbol: "speaker.wave.3.fill", tint: .blue,
@@ -953,6 +1050,42 @@ struct SettingsView: View {
                     Button("Reset All…") { confirmResetAll() }
                         .controlSize(.small)
                 }
+            }
+        }
+    }
+
+    private var notificationEngineRow: some View {
+        let fdaOK = perms[.fullDiskAccess]?.isGranted ?? false
+        let axOK = perms[.accessibility]?.isGranted ?? false
+        let statusLabel: String
+        let statusTint: Color
+        let detail: String
+        switch (fdaOK, axOK) {
+        case (true, true):
+            statusLabel = "Full + Live"; statusTint = .green
+            detail = "Instant live banners plus full 24h Notification Center history"
+        case (true, false):
+            statusLabel = "Full History"; statusTint = .green
+            detail = "Notification Center database active (grant Accessibility for instant banners)"
+        case (false, true):
+            statusLabel = "Live Active"; statusTint = .cyan
+            detail = "Capturing all live banners instantly (add Full Disk Access for 24h history)"
+        case (false, false):
+            statusLabel = "Setup Needed"; statusTint = .orange
+            detail = "Grant Accessibility or Full Disk Access under Privacy to mirror notifications"
+        }
+        return SettingRow(
+            symbol: "antenna.radiowaves.left.and.right", tint: statusTint,
+            title: "Capture Engine",
+            subtitle: detail
+        ) {
+            HStack(spacing: 8) {
+                trustChip(statusLabel, tint: statusTint)
+                Button("Test Banner") {
+                    IslandState.shared?.sendTestNotification()
+                }
+                .controlSize(.small)
+                .help("Preview KramaIsland's notification banner right under the notch")
             }
         }
     }
