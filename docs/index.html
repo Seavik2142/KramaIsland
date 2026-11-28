@@ -4,9 +4,9 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>KramaIsland — Your notch, now a Dynamic Island</title>
-<meta name="description" content="KramaIsland turns the MacBook notch into a Dynamic Island: Now Playing from any app or browser, a notification shade, live activities, a ⌥ Space launcher, timer, calendar, shelf and more. Free and open source for macOS 13+.">
-<meta property="og:title" content="KramaIsland">
-<meta property="og:description" content="Your MacBook notch, now a Dynamic Island. Free, open source, macOS 13+.">
+<meta name="description" content="KramaIsland turns your MacBook notch — and every connected monitor — into a 120 fps Dynamic Island: zero-lag AirDrop, native Volume HUD, multi-display support, full-screen video auto-hide, custom Rows × Columns window tiling, universal notifications, ⌥ Space launcher, and automatic update alerts. Free and open source for macOS 13+.">
+<meta property="og:title" content="KramaIsland v1.5.0 — Native Dynamic Island for macOS">
+<meta property="og:description" content="Your MacBook notch & external displays, now a 120 fps Dynamic Island. AirDrop, Volume HUD, Window Tiling, Notifications & Auto-Updates. Free & open source.">
 <meta property="og:image" content="https://seavik2142.github.io/KramaIsland/assets/icon.png">
 <meta property="og:type" content="website">
 <meta name="author" content="Mao Seavik">
@@ -23,7 +23,7 @@
     --faint: #6e6e73;
     --line: rgba(255,255,255,.08);
     --card: rgba(255,255,255,.045);
-    --card-hover: rgba(255,255,255,.07);
+    --card-hover: rgba(255,255,255,.075);
     --g1: #7dd3fc; --g2: #c084fc; --g3: #fb7185;
     --radius: 22px;
     --max: 1120px;
@@ -46,31 +46,39 @@
   .nav {
     position: sticky; top: 0; z-index: 10;
     backdrop-filter: saturate(180%) blur(18px); -webkit-backdrop-filter: saturate(180%) blur(18px);
-    background: rgba(0,0,0,.6); border-bottom: 1px solid var(--line);
+    background: rgba(0,0,0,.64); border-bottom: 1px solid var(--line);
   }
   .nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 56px; }
   .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -.01em; }
   .brand img { width: 28px; height: 28px; }
-  .nav nav { display: flex; gap: 26px; font-size: 14px; color: var(--muted); }
+  .brand .ver-pill {
+    font-size: 11px; font-weight: 600; color: var(--g1);
+    padding: 2px 8px; border-radius: 999px;
+    background: rgba(125,211,252,.12); border: 1px solid rgba(125,211,252,.24);
+  }
+  .nav nav { display: flex; gap: 24px; font-size: 14px; color: var(--muted); }
   .nav nav a:hover { color: var(--fg); }
   .nav nav .gh { color: var(--fg); }
-  @media (max-width: 720px) { .nav nav a:not(.gh) { display: none; } }
+  @media (max-width: 760px) { .nav nav a:not(.gh) { display: none; } }
 
   /* ---------- hero ---------- */
-  .hero { position: relative; padding: 92px 0 0; text-align: center; overflow: hidden; }
+  .hero { position: relative; padding: 88px 0 0; text-align: center; overflow: hidden; }
   .hero::before {
     content: ""; position: absolute; inset: -40% -20% auto; height: 120%; pointer-events: none;
     background:
-      radial-gradient(60% 50% at 50% 0%, rgba(125,211,252,.16), transparent 70%),
-      radial-gradient(40% 40% at 30% 20%, rgba(192,132,252,.12), transparent 70%),
+      radial-gradient(60% 50% at 50% 0%, rgba(125,211,252,.17), transparent 70%),
+      radial-gradient(40% 40% at 30% 20%, rgba(192,132,252,.13), transparent 70%),
       radial-gradient(40% 40% at 70% 20%, rgba(251,113,133,.10), transparent 70%);
   }
   .eyebrow {
     position: relative; display: inline-flex; align-items: center; gap: 8px;
     font-size: 13px; font-weight: 500; color: var(--muted);
-    padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.03);
+    padding: 6px 14px; border: 1px solid var(--line); border-radius: 999px; background: rgba(255,255,255,.035);
+    transition: border-color .15s ease, background .15s ease;
   }
+  .eyebrow:hover { border-color: rgba(125,211,252,.35); background: rgba(125,211,252,.07); }
   .eyebrow .dot { width: 6px; height: 6px; border-radius: 50%; background: #34d399; box-shadow: 0 0 10px #34d399; }
+  .eyebrow strong { color: var(--fg); font-weight: 600; }
   h1 {
     position: relative; margin: 22px auto 18px; max-width: 14ch;
     font-size: clamp(42px, 7.2vw, 84px); line-height: 1.02; font-weight: 700; letter-spacing: -.035em;
@@ -79,8 +87,8 @@
     background: linear-gradient(92deg, var(--g1), var(--g2) 55%, var(--g3)); -webkit-background-clip: text;
     background-clip: text; color: transparent;
   }
-  .lede { position: relative; margin: 0 auto; max-width: 58ch; color: var(--muted); font-size: clamp(17px, 2vw, 21px); }
-  .cta { position: relative; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin: 34px 0 10px; }
+  .lede { position: relative; margin: 0 auto; max-width: 60ch; color: var(--muted); font-size: clamp(17px, 2vw, 21px); }
+  .cta { position: relative; display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin: 34px 0 12px; }
   .btn {
     display: inline-flex; align-items: center; gap: 10px; height: 48px; padding: 0 22px; border-radius: 999px;
     font-weight: 600; font-size: 16px; letter-spacing: -.01em; transition: transform .15s ease, background .15s ease;
@@ -112,31 +120,72 @@
   }
   .display .island { position: absolute; top: 0; left: 50%; transform: translateX(-50%); z-index: 2; }
   .display .island img { width: 100%; height: auto; }
-  .hero .display { margin: 56px auto 0; aspect-ratio: 4 / 3; max-width: 1040px; }
+  .hero .display { margin: 54px auto 0; aspect-ratio: 4 / 3; max-width: 1040px; }
   .hero .display .island { width: 40%; }
   @media (max-width: 900px) { .hero .display { aspect-ratio: 2 / 3; } .hero .display .island { width: 80%; } }
 
   /* ---------- sections ---------- */
-  section { padding: 110px 0 0; }
+  section { padding: 104px 0 0; }
   .kicker { color: var(--g2); font-weight: 600; font-size: 14px; letter-spacing: .02em; text-transform: uppercase; margin: 0 0 10px; }
   h2 { font-size: clamp(30px, 4.4vw, 48px); line-height: 1.08; letter-spacing: -.03em; margin: 0 0 14px; font-weight: 700; max-width: 22ch; }
-  .sub { color: var(--muted); max-width: 60ch; margin: 0 0 42px; font-size: 18px; }
+  .sub { color: var(--muted); max-width: 62ch; margin: 0 0 40px; font-size: 18px; }
 
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 14px; }
+  /* ---------- release spotlight ---------- */
+  .release-box {
+    background:
+      radial-gradient(80% 120% at 0% 0%, rgba(125,211,252,.11), transparent 60%),
+      radial-gradient(60% 100% at 100% 100%, rgba(192,132,252,.10), transparent 60%),
+      rgba(255,255,255,.035);
+    border: 1px solid rgba(125,211,252,.22);
+    border-radius: 24px;
+    padding: 30px 28px;
+  }
+  .release-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;
+    padding-bottom: 18px; margin-bottom: 20px; border-bottom: 1px solid var(--line);
+  }
+  .release-title { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .release-title h3 { margin: 0; font-size: 24px; letter-spacing: -.02em; }
+  .release-tag {
+    font-size: 12px; font-weight: 700; color: #000;
+    background: linear-gradient(92deg, var(--g1), var(--g2));
+    padding: 3px 10px; border-radius: 999px;
+  }
+  .release-date { font-size: 13px; color: var(--muted); }
+  .release-list {
+    list-style: none; padding: 0; margin: 0;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 14px 22px;
+  }
+  .release-list li {
+    position: relative; padding-left: 20px; color: var(--muted); font-size: 15px; line-height: 1.5;
+  }
+  .release-list li::before {
+    content: ""; position: absolute; left: 0; top: 9px; width: 7px; height: 7px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--g1), var(--g2));
+  }
+  .release-list li strong { color: var(--fg); font-weight: 600; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(275px, 1fr)); gap: 14px; }
   .card {
     background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 24px 22px;
-    transition: background .2s ease, transform .2s ease;
+    transition: background .2s ease, transform .2s ease, border-color .2s ease;
   }
-  .card:hover { background: var(--card-hover); transform: translateY(-2px); }
+  .card:hover { background: var(--card-hover); transform: translateY(-2px); border-color: rgba(255,255,255,.14); }
   .card .ico {
     width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; margin-bottom: 16px;
     background: linear-gradient(135deg, rgba(125,211,252,.22), rgba(192,132,252,.22)); color: #dbeafe;
   }
   .card .ico svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
-  .card h3 { margin: 0 0 6px; font-size: 17px; letter-spacing: -.01em; }
+  .card .card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+  .card h3 { margin: 0; font-size: 17px; letter-spacing: -.01em; }
+  .card .new-chip {
+    font-size: 10px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+    padding: 2px 7px; border-radius: 999px; color: var(--g1);
+    background: rgba(125,211,252,.14); border: 1px solid rgba(125,211,252,.28);
+  }
   .card p { margin: 0; color: var(--muted); font-size: 15px; }
   kbd { font-family: var(--font); font-size: .85em; padding: 1px 7px; border-radius: 6px; background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.12); }
-  p code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85em; padding: 1px 6px; border-radius: 6px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.1); white-space: nowrap; }
+  p code, li code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85em; padding: 1px 6px; border-radius: 6px; background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.1); white-space: nowrap; }
 
   /* ---------- states gallery ---------- */
   .states { display: grid; grid-template-columns: repeat(6, 1fr); gap: 18px; }
@@ -160,7 +209,7 @@
   figure { margin: 0; }
 
   /* ---------- install ---------- */
-  .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; counter-reset: step; }
+  .steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 14px; counter-reset: step; }
   .step { position: relative; background: var(--card); border: 1px solid var(--line); border-radius: 20px; padding: 26px 22px 22px; }
   .step::before {
     counter-increment: step; content: counter(step);
@@ -169,6 +218,7 @@
   }
   .step h3 { margin: 0 0 6px; font-size: 17px; }
   .step p { margin: 0; color: var(--muted); font-size: 15px; }
+  .step a { color: var(--g1); text-decoration: underline; text-underline-offset: 3px; }
   .note {
     margin-top: 18px; padding: 16px 18px; border-radius: 16px; font-size: 15px; color: var(--muted);
     background: rgba(251,191,36,.08); border: 1px solid rgba(251,191,36,.25);
@@ -201,8 +251,6 @@
   .author p { margin: 0; color: var(--muted); font-size: 15px; max-width: 56ch; }
   .author .links { display: flex; flex-direction: column; gap: 10px; }
   .author .btn { height: 42px; font-size: 14px; padding: 0 16px; }
-  .author .btn.linkedin { background: #0a66c2; color: #fff; }
-  .author .btn.linkedin:hover { background: #1b74cc; }
   @media (max-width: 760px) {
     .author { grid-template-columns: 1fr; text-align: center; justify-items: center; }
     .author .links { flex-direction: row; flex-wrap: wrap; justify-content: center; }
@@ -223,8 +271,13 @@
 
 <header class="nav">
   <div class="wrap">
-    <a class="brand" href="#"><img src="assets/icon.png" alt="" width="28" height="28"> KramaIsland</a>
+    <a class="brand" href="#">
+      <img src="assets/icon.png" alt="" width="28" height="28">
+      KramaIsland
+      <span class="ver-pill" data-release-tag>v1.5.0</span>
+    </a>
     <nav>
+      <a href="#whats-new">What's New</a>
       <a href="#features">Features</a>
       <a href="#states">Screens</a>
       <a href="#install">Install</a>
@@ -237,23 +290,50 @@
 <main>
   <section class="hero">
     <div class="wrap">
-      <span class="eyebrow rise"><span class="dot"></span> Free · Open source · macOS 13+ · Apple silicon</span>
+      <a class="eyebrow rise" href="#whats-new">
+        <span class="dot"></span>
+        <span><strong>New <span data-release-tag>v1.5.0</span></strong> · AirDrop, Multi-Display &amp; Auto-Updates · macOS 13+ Apple Silicon</span>
+      </a>
       <h1 class="rise d1">Your notch, <span class="grad">now a Dynamic Island.</span></h1>
-      <p class="lede rise d2">KramaIsland lives inside the MacBook notch and grows out of it: what's playing, what just arrived, what's charging, what's next. One black surface, flush with the bezel, that only shows up when it has something to say.</p>
+      <p class="lede rise d2">KramaIsland lives inside your MacBook notch — and every connected monitor — delivering zero-lag AirDrop, native CoreAudio volume, custom project window tiling, universal notifications, media, and instant automatic updates at 120 fps.</p>
       <div class="cta rise d3">
-        <a class="btn primary" href="https://github.com/Seavik2142/KramaIsland/raw/main/dist/KramaIsland.dmg" download>
+        <a class="btn primary" data-dmg-link href="https://github.com/Seavik2142/KramaIsland/releases/latest/download/KramaIsland.dmg" download>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg>
-          Download for Mac <small>.dmg · v1.4.0 · 2.1 MB</small>
+          Download for Mac <small data-dmg-meta>.dmg · v1.5.0 · 3.6 MB</small>
         </a>
-        <a class="btn ghost" href="https://github.com/Seavik2142/KramaIsland">
+        <a class="btn ghost" data-release-link href="https://github.com/Seavik2142/KramaIsland/releases/latest">
           <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .5A11.5 11.5 0 0 0 .5 12c0 5.08 3.29 9.39 7.86 10.91.58.1.79-.25.79-.56v-2.1c-3.2.7-3.87-1.37-3.87-1.37-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.76 2.7 1.25 3.36.96.1-.75.4-1.25.73-1.54-2.55-.29-5.24-1.28-5.24-5.68 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.8 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.41-2.69 5.38-5.26 5.67.41.36.78 1.06.78 2.14v3.17c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12 11.5 11.5 0 0 0 12 .5z"/></svg>
-          View on GitHub
+          Release Notes
         </a>
       </div>
-      <p class="fineprint rise d3">MIT licensed · no accounts, no analytics · updates itself from <a href="https://github.com/Seavik2142/KramaIsland/releases">GitHub Releases</a></p>
+      <p class="fineprint rise d3">Free &amp; MIT licensed · zero telemetry · alerts you automatically when new updates land on <a href="https://github.com/Seavik2142/KramaIsland/releases">GitHub Releases</a></p>
 
       <div class="display rise d4" aria-label="The KramaIsland shade open under the notch">
-        <div class="island"><img src="assets/shade.png" alt="The shade: clock, quick toggles, a running timer, the next calendar event with a Join button, Now Playing with transport and volume, a shelf of files, clipboard history and notifications grouped by app"></div>
+        <div class="island"><img src="assets/shade.png" alt="The KramaIsland shade: clock, quick toggles, window layouts, timer, calendar event with Join button, Now Playing, AirDrop & File Shelf, clipboard history, and app-grouped notifications"></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="whats-new">
+    <div class="wrap">
+      <p class="kicker">Latest Release</p>
+      <div class="release-box">
+        <div class="release-head">
+          <div class="release-title">
+            <h3 data-release-title>KramaIsland v1.5.0</h3>
+            <span class="release-tag">Latest</span>
+            <span class="release-date" data-release-date>Updated November 2026</span>
+          </div>
+          <a class="btn ghost" style="height:38px;font-size:14px;padding:0 16px;" data-release-link href="https://github.com/Seavik2142/KramaIsland/releases/latest">View on GitHub ↗</a>
+        </div>
+        <ul class="release-list" id="release-notes-list">
+          <li><strong>Automatic Update Alerts &amp; 1-Click Install:</strong> Lightweight ETag checks on launch, wake, and every 2 hours pop an interactive Dynamic Island HUD, native Update Alert window, and Menu Bar badge — swapping in place while keeping all macOS permissions.</li>
+          <li><strong>Zero-Lag AirDrop &amp; File Shelf:</strong> Drag any file, folder, or browser image toward the notch on any display to magnetically open side-by-side <strong>AirDrop | File Shelf</strong> drop zones with pre-warmed native sharing and O(1) drag-out.</li>
+          <li><strong>Multi-Display Dynamic Island:</strong> Runs simultaneously across <strong>All Displays</strong> (MacBook notch + external monitors), <strong>Follow Cursor</strong>, or any pinned screen with independent hover and full-screen hiding.</li>
+          <li><strong>Auto Full-Screen Video Hiding:</strong> Automatically hides per-display whenever you play full-screen videos in YouTube, Safari, Chrome, VLC, IINA, or QuickTime while keeping your other displays active.</li>
+          <li><strong>120 fps Zero-Delay Engine:</strong> Off-main-thread visibility &amp; downloads watchers, zero pasteboard IPC on mouse moves, diffed settings sync, and tuned 120 Hz spring physics (~0.8% idle CPU).</li>
+          <li><strong>Custom Project Grid &amp; Island Resizing:</strong> Configure <code>1–4 × 1–4</code> project window grids (<kbd>⌃</kbd> <kbd>⌥</kbd> <kbd>G</kbd>) and customize the full horizontal &amp; vertical size of the Dynamic Island with Live Preview or direct corner drag.</li>
+        </ul>
       </div>
     </div>
   </section>
@@ -262,57 +342,67 @@
     <div class="wrap">
       <p class="kicker">Live, where you're already looking</p>
       <h2>Everything that matters right now, right under the notch.</h2>
-      <p class="sub">Hover for a glance, click for the full shade, press <kbd>⌥</kbd> <kbd>Space</kbd> to launch anything. The island stays true black so it blends with the bezel and disappears when it's idle.</p>
+      <p class="sub">Hover for a glance, click for the full shade, drag a file to AirDrop instantly, or press <kbd>⌥</kbd> <kbd>Space</kbd> to launch anything. One obsidian surface that blends into your bezel and stays out of your way during full-screen video.</p>
       <div class="grid">
         <div class="card">
-          <div class="ico"><svg viewBox="0 0 24 24"><path d="M9 18V6l11-2v12"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg></div>
-          <h3>Now Playing, from anywhere</h3>
-          <p>The TV app, Music, Podcasts, QuickTime Player, Spotify, VLC and whatever is playing in Safari or any Chromium browser: Chrome, Brave, Edge, Arc, Vivaldi, Opera. Anything that publishes to Control Center shows up, no permission needed. Every app, and every browser tab with media, is its own source; the island follows the stream that started last and lets you switch with a tap. Artwork in the ear, bouncing bars while it plays, a scrubber, transport and the system volume slider.</p>
+          <div class="ico"><svg viewBox="0 0 24 24"><path d="M12 12h.01"/><path d="M16.24 7.76a6 6 0 0 1 0 8.49"/><path d="M7.76 16.24a6 6 0 0 1 0-8.49"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M4.93 19.07a10 10 0 0 1 0-14.14"/></svg></div>
+          <div class="card-head"><h3>Instant AirDrop &amp; File Shelf</h3><span class="new-chip">New</span></div>
+          <p>Drag any file, folder, or web image near the notch to reveal dual <strong>AirDrop</strong> and <strong>File Shelf</strong> zones. Pre-warmed native AirDrop launches with zero Finder stall, or park files in the Shade to drag out later or AirDrop all at once.</p>
+        </div>
+        <div class="card">
+          <div class="ico"><svg viewBox="0 0 24 24"><rect x="2" y="3" width="14" height="10" rx="2"/><rect x="8" y="11" width="14" height="10" rx="2"/></svg></div>
+          <div class="card-head"><h3>Multi-Display &amp; Full-Screen Auto-Hide</h3><span class="new-chip">New</span></div>
+          <p>Show KramaIsland on <strong>All Displays</strong> (MacBook notch + external monitors), follow your cursor, or pin a specific monitor. Playing a full-screen video hides only that display while your other monitors stay live.</p>
+        </div>
+        <div class="card">
+          <div class="ico"><svg viewBox="0 0 24 24"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg></div>
+          <div class="card-head"><h3>Native Volume HUD</h3><span class="new-chip">New</span></div>
+          <p>Powered directly by CoreAudio with hardware key interception so macOS's default volume popup stays hidden. Shows the active speaker or AirPods icon, 120 fps drag scrubbing, click-to-mute, and <kbd>⌥</kbd> <kbd>⇧</kbd> fine steps.</p>
+        </div>
+        <div class="card">
+          <div class="ico"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></div>
+          <div class="card-head"><h3>Custom Project Grid &amp; Window Snap</h3><span class="new-chip">New</span></div>
+          <p>Configure custom <code>1–4 × 1–4</code> Rows × Columns grids in Settings or the Shade's interactive cell map, plus 1-click 2-split, focus, 3-column, and 4-grid multi-app tiling via <kbd>⌃</kbd> <kbd>⌥</kbd> shortcuts.</p>
         </div>
         <div class="card">
           <div class="ico"><svg viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg></div>
-          <h3>A real notification shade</h3>
-          <p>Banners drop out of the notch, then collect in a shade grouped by app with history, Clear and Clear All. Private messages stay on your Mac: it reads Notification Center's own store.</p>
+          <div class="card-head"><h3>Universal Notifications &amp; Banner Takeover</h3></div>
+          <p>Dual-engine capture mirrors alerts from all apps and browsers, automatically closes macOS's original top-right banners, detects 2FA/OTP codes for 1-click Copy, extracts meeting links, and groups history cleanly in the Shade.</p>
         </div>
         <div class="card">
-          <div class="ico"><svg viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></div>
-          <h3>Live activities</h3>
-          <p>Charger in or out, low battery, volume changes, AirPods connecting with left, right and case battery, downloads with real progress, a finished timer. Long-running ones shrink into a ring in the ear.</p>
+          <div class="ico"><svg viewBox="0 0 24 24"><path d="M9 18V6l11-2v12"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg></div>
+          <div class="card-head"><h3>Now Playing, from anywhere</h3></div>
+          <p>Apple Music, TV, Podcasts, QuickTime, IINA, Spotify, VLC, Safari, and every Chromium browser (Chrome, Brave, Edge, Arc, Vivaldi, Opera). Album artwork in the ear, color-matched level bars, scrubber, and instant multi-source switching.</p>
+        </div>
+        <div class="card">
+          <div class="ico"><svg viewBox="0 0 24 24"><path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/></svg></div>
+          <div class="card-head"><h3>Custom Horizontal &amp; Vertical Size</h3><span class="new-chip">New</span></div>
+          <p>Resize the open Dynamic Island horizontally (<code>360–760 pt</code>), vertically (<code>320–860 pt</code>), and tweak compact bar width &amp; thickness in Settings with Live Preview — or drag the Shade's corner handle directly.</p>
+        </div>
+        <div class="card">
+          <div class="ico"><svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
+          <div class="card-head"><h3>Automatic Update Alerts</h3><span class="new-chip">New</span></div>
+          <p>Lightweight ETag checks detect new releases with zero rate-limit waste, alert you right in the Dynamic Island and a native Release Notes window, verify the signing certificate so permissions survive, and relaunch automatically.</p>
         </div>
         <div class="card">
           <div class="ico"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></div>
-          <h3><kbd>⌥</kbd> <kbd>Space</kbd> launcher</h3>
-          <p>Fuzzy app search ranked by what you open most, Spotlight file search, a calculator, unit conversion and quick actions like lock, sleep or dark mode. The hotkey is swallowed, so nothing else hears it.</p>
+          <div class="card-head"><h3><kbd>⌥</kbd> <kbd>Space</kbd> Command Launcher</h3></div>
+          <p>Fuzzy app search ranked by frequency, Spotlight file lookup, safe math calculator, unit converter (<code>5 km to mi</code>), clipboard search, AirDrop actions, window tiling, and system commands.</p>
         </div>
         <div class="card">
           <div class="ico"><svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5"/><path d="M9 2h6"/></svg></div>
-          <h3>Timer and next event</h3>
-          <p>Pomodoro presets with a countdown ring in the ear and a chime at the end. Your next calendar event sits in the shade with a one-tap Join for Zoom, Meet, Teams and friends.</p>
-        </div>
-        <div class="card">
-          <div class="ico"><svg viewBox="0 0 24 24"><path d="M3 13h5l2 3h4l2-3h5"/><path d="M5 7h14l2 6v6H3v-6z"/></svg></div>
-          <h3>Shelf</h3>
-          <p>Drag files onto the notch to park them. Drag them back out into any app later, open them, or AirDrop the whole shelf in one go.</p>
+          <div class="card-head"><h3>Timer, Calendar &amp; Live Activities</h3></div>
+          <p>Pomodoro presets with a live ear countdown ring, next meeting with 1-click Join for Zoom/Meet/Teams, charger &amp; low-battery alerts, AirPods L/R/Case battery, active <code>~/Downloads</code> progress ring, and Shortcuts JSON activities.</p>
         </div>
         <div class="card">
           <div class="ico"><svg viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></div>
-          <h3>Quick toggles and Focus</h3>
-          <p>Dark Mode, Keep Awake, Wi-Fi, Quiet Mode and a camera check for calls. The Focus tile mirrors the system, lighting up with “Do Not Disturb” or whatever mode you're in.</p>
-        </div>
-        <div class="card">
-          <div class="ico"><svg viewBox="0 0 24 24"><path d="M8.7 3.9A6 6 0 0 1 18 8c0 2.6.4 4.5 1 5.9"/><path d="M6 8c0 7-3 9-3 9h14"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/><path d="m3 3 18 18"/></svg></div>
-          <h3>Quiet Mode</h3>
-          <p>One switch and nothing pops out of the notch: no HUDs, no banners, not even the ears. Turn it on from the shade, the menu bar or the launcher, for an hour or until you say so, or let it follow your macOS Focus. Hover and click still open the island, notifications keep collecting, and you choose the few things that may break through, like a finished timer or a low battery.</p>
-        </div>
-        <div class="card">
-          <div class="ico"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0"/><path d="M12 18v3"/></svg></div>
-          <h3>Mic, camera, Focus indicators</h3>
-          <p>Small coloured marks beside the notch tell you when the microphone or camera is live, when a Focus is on and when the display is being kept awake.</p>
+          <div class="card-head"><h3>Quick Toggles, Mirror &amp; Quiet Mode</h3></div>
+          <p>Dark Mode, Keep Awake, Wi-Fi, Camera Mirror check, Focus sync, and Quiet Mode (manual, 1-hour timer, or synced with macOS Focus) plus live mic &amp; camera privacy indicators beside the notch.</p>
         </div>
         <div class="card">
           <div class="ico"><svg viewBox="0 0 24 24"><path d="M12 2 4 5v6c0 5 3.4 9.4 8 11 4.6-1.6 8-6 8-11V5z"/><path d="m9 12 2 2 4-4"/></svg></div>
-          <h3>Private by design</h3>
-          <p>No account, no server, no analytics. Everything is read from your own Mac. The one network request is a daily look at GitHub Releases for a new version, which sends nothing about you and can be switched off.</p>
+          <div class="card-head"><h3>Private by Design</h3></div>
+          <p>100% on-device with no accounts, servers, or analytics. Boot-session clipboard history skips password managers and auto-wipes on shutdown. Even update checks can be toggled off into Strict Offline Mode.</p>
         </div>
       </div>
     </div>
@@ -322,7 +412,7 @@
     <div class="wrap">
       <p class="kicker">One surface, many states</p>
       <h2>It only grows as much as it needs to.</h2>
-      <p class="sub">Idle, the island is just the notch. Everything below flows out of it with the same width and the same black, so the notch and whatever drops down always read as one thing.</p>
+      <p class="sub">Idle, the island is just the notch (or a clean resting pill on external monitors). Everything flows out of it with concave shoulders and 120 fps springs, so the notch and whatever drops down always feel like one object.</p>
       <div class="states">
         <figure class="state">
           <div class="display narrow"><div class="island"><img src="assets/compact.png" alt="Compact: album art on the left ear, bouncing level bars on the right"></div></div>
@@ -330,19 +420,19 @@
         </figure>
         <figure class="state">
           <div class="display"><div class="island"><img src="assets/activity.png" alt="Live activity: AirPods Pro connected with left, right and case battery"></div></div>
-          <figcaption><b>Live activity</b><span>AirPods, charger, volume, downloads: a short HUD, then gone.</span></figcaption>
+          <figcaption><b>Live activity</b><span>AirPods, charger, volume, AirDrop &amp; updates: a crisp HUD, then gone.</span></figcaption>
         </figure>
         <figure class="state">
           <div class="display"><div class="island"><img src="assets/banner.png" alt="A Messages banner dropping out of the notch"></div></div>
-          <figcaption><b>Banner</b><span>Notifications drop in from the notch. Tap to open, swipe on.</span></figcaption>
+          <figcaption><b>Banner</b><span>Notifications drop in with 1-click OTP copy and native banner takeover.</span></figcaption>
         </figure>
         <figure class="state big">
           <div class="display hover"><div class="island"><img src="assets/hover.png" alt="Hover: clock and date, a Do Not Disturb chip, battery, unread bell, Now Playing and the last message"></div></div>
-          <figcaption><b>Hover</b><span>A glance: clock, Focus, battery, unread count, timer, event, media.</span></figcaption>
+          <figcaption><b>Hover &amp; Drop Zones</b><span>Glance at clock, Focus, battery, and media — or drag files to AirDrop instantly.</span></figcaption>
         </figure>
         <figure class="state big">
           <div class="display wide"><div class="island"><img src="assets/launcher.png" alt="Launcher: typing 5 km to mi shows the conversion result"></div></div>
-          <figcaption><b>Launcher</b><span>Apps, files, maths, units and actions from <kbd>⌥</kbd> <kbd>Space</kbd>.</span></figcaption>
+          <figcaption><b>Launcher</b><span>Apps, files, math, units, AirDrop &amp; window tiling from <kbd>⌥</kbd> <kbd>Space</kbd>.</span></figcaption>
         </figure>
       </div>
     </div>
@@ -352,27 +442,27 @@
     <div class="wrap">
       <p class="kicker">Install</p>
       <h2>Up and running in a minute.</h2>
-      <p class="sub">KramaIsland is a tiny, self-contained app. It needs macOS 13 Ventura or later and a Mac with Apple silicon (every notched MacBook has one).</p>
+      <p class="sub">KramaIsland is a tiny, zero-dependency Swift app for macOS 13 Ventura or later on Apple silicon — works on both notched MacBooks and external displays.</p>
       <div class="steps">
         <div class="step">
           <h3>Download and drag</h3>
-          <p>Open <a href="https://github.com/Seavik2142/KramaIsland/raw/main/dist/KramaIsland.dmg">KramaIsland.dmg</a> and drag KramaIsland into Applications. It runs as a menu bar app, with no Dock icon.</p>
+          <p>Open <a data-dmg-link href="https://github.com/Seavik2142/KramaIsland/releases/latest/download/KramaIsland.dmg">KramaIsland.dmg</a> and drag KramaIsland into Applications. It runs quietly as a menu bar app with no Dock clutter.</p>
         </div>
         <div class="step">
           <h3>Open it the first time</h3>
-          <p>macOS will say it "could not verify KramaIsland is free of malware": the app is not notarized. On macOS 15 and later click <b>Done</b>, then System Settings → Privacy &amp; Security → scroll to "KramaIsland was blocked" → <b>Open Anyway</b>. On macOS 13 and 14, right-click KramaIsland in Applications → <b>Open</b>. Or in Terminal: <code>xattr -dr com.apple.quarantine /Applications/KramaIsland.app</code></p>
+          <p>Because KramaIsland is free, open source, and signed with its own stable certificate rather than a paid notarized Developer ID, macOS asks once on first launch. On macOS 15+, click <b>Done</b> → System Settings → Privacy &amp; Security → <b>Open Anyway</b>. On macOS 13–14, right-click → <b>Open</b>. Or run <code>xattr -dr com.apple.quarantine /Applications/KramaIsland.app</code></p>
         </div>
         <div class="step">
           <h3>Grant what you use</h3>
-          <p>Full Disk Access for notifications: System Settings → Privacy &amp; Security → Full Disk Access → turn on KramaIsland (click + and pick it from Applications if it is not listed), then relaunch. The island shows a hint until then; click it to jump there. Accessibility for the hotkey is asked on first launch, Automation the first time a player is read, Calendar and Camera when you first use them. Settings → Permissions shows the state of each.</p>
+          <p>Open <b>Settings → Privacy</b> for one-click permission status and direct links: Accessibility for the hotkey, native Volume &amp; Notification banner replacement, and window tiling; Full Disk Access for Notification history; Calendar and Camera on demand.</p>
         </div>
         <div class="step">
-          <h3>Stay current</h3>
-          <p>That is the last download. KramaIsland checks GitHub once a day and tells you in the island when a new version is out. Settings → Updates shows what's new, and <b>Update Now</b> installs it in place: it keeps every permission you granted and never shows the Gatekeeper dialog, since nothing goes through a browser.</p>
+          <h3>Automatic update alerts</h3>
+          <p>That is your last manual download. KramaIsland checks GitHub Releases automatically via ETag, alerts you in the Dynamic Island and an Update Alert window with What's New notes, and installs signature-verified updates in place — keeping every macOS permission intact.</p>
         </div>
       </div>
-      <div class="note"><b>Why the extra click?</b> Only apps notarized through a paid Apple Developer ID open silently. KramaIsland is free and open source and signed with its own certificate, so Gatekeeper asks you to confirm the first launch, once. The DMG includes a "Read me first" with the same steps. You can also build it yourself in under a minute: see below.</div>
-      <div class="note"><b>Allowed in System Settings but not working?</b> macOS ties each permission to the build that asked for it. A grant made to an earlier version with a different signature stays switched on in the list but no longer applies, and flipping it changes nothing. Since 1.1.1 KramaIsland clears such entries on its first launch after an update and asks again; if a row in Settings → Permissions still carries the orange <i>was granted to an earlier build</i> mark, click <b>Reset…</b> next to it and allow it again. Entries with a terminal icon are leftovers from a development build.</div>
+      <div class="note"><b>Why the one-time Gatekeeper click?</b> Only apps notarized through a paid Apple Developer membership open silently after a browser download. KramaIsland is free, open source, and signed with a stable project certificate so future in-place updates never show Gatekeeper again and never break your permissions.</div>
+      <div class="note"><b>Allowed in System Settings but not working?</b> macOS binds permissions to the build's code signature. If you upgraded from an older ad-hoc build, open <b>Settings → Privacy</b> and click <b>Reset…</b> next to any orange item to refresh it cleanly.</div>
     </div>
   </section>
 
@@ -381,9 +471,9 @@
       <div>
         <p class="kicker">Open source</p>
         <h2>Swift, SwiftUI and nothing else.</h2>
-        <p class="sub" style="margin-bottom:0">One Swift package, no dependencies, MIT licensed. Clone it, run it, read every line that touches your notifications. Issues and pull requests are welcome.</p>
+        <p class="sub" style="margin-bottom:0">One Swift package, zero third-party dependencies, MIT licensed. Clone it, inspect every line, build it yourself, or publish signed releases with one command.</p>
         <div class="badges">
-          <span class="badge">Swift 5.9</span><span class="badge">SwiftUI + AppKit</span><span class="badge">macOS 13+</span><span class="badge">MIT</span><span class="badge">No dependencies</span>
+          <span class="badge">Swift 5.9+</span><span class="badge">SwiftUI + AppKit</span><span class="badge">CoreAudio</span><span class="badge">macOS 13+</span><span class="badge">MIT</span><span class="badge">Zero dependencies</span>
         </div>
       </div>
       <pre><span class="c"># run from source</span>
@@ -391,8 +481,8 @@ git clone https://github.com/Seavik2142/KramaIsland.git
 cd KramaIsland
 swift run
 
-<span class="c"># or build the .app and .dmg yourself</span>
-scripts/make-dmg.sh 1.4.0</pre>
+<span class="c"># build a signed .app and .dmg</span>
+<span id="build-cmd">scripts/make-dmg.sh 1.5.0</span></pre>
     </div>
   </section>
 
@@ -400,13 +490,13 @@ scripts/make-dmg.sh 1.4.0</pre>
     <div class="wrap">
       <p class="kicker">About the maker</p>
       <h2>Built by Mao Seavik.</h2>
-      <p class="sub">KramaIsland started as a small itch: the notch takes up space on every MacBook, so it may as well earn it. It is built and maintained in the open.</p>
+      <p class="sub">KramaIsland started with a simple idea: the notch already takes up space on every MacBook, so it should work for you — smoothly, privately, and across all your screens.</p>
       <div class="author">
         <div class="avatar"><img src="https://github.com/Seavik2142.png?size=200" alt="Mao Seavik" width="84" height="84" loading="lazy"></div>
         <div>
           <h3>Mao Seavik</h3>
           <p class="role">Creator and maintainer of KramaIsland</p>
-          <p>If KramaIsland saves you a glance at the menu bar, say hello. If something is off, open an issue on GitHub and it will get looked at.</p>
+          <p>If KramaIsland makes your MacBook feel faster and cleaner, star the repo or say hello. Found a bug or want a feature? Open an issue on GitHub.</p>
         </div>
         <div class="links">
           <a class="btn ghost" href="https://github.com/Seavik2142" rel="me noopener" target="_blank">
@@ -425,6 +515,83 @@ scripts/make-dmg.sh 1.4.0</pre>
     <span><a href="https://github.com/Seavik2142/KramaIsland">Source</a> · <a href="https://github.com/Seavik2142/KramaIsland/issues">Issues</a> · <a href="https://github.com/Seavik2142/KramaIsland/releases">Releases</a></span>
   </div>
 </footer>
+
+<script>
+// Live-sync the landing page with the latest published GitHub Release automatically.
+// Falls back seamlessly to the static v1.5.0 metadata if offline or rate-limited.
+(function syncLatestRelease() {
+  const endpoint = "https://api.github.com/repos/Seavik2142/KramaIsland/releases/latest";
+
+  function escapeHTML(str) {
+    return str.replace(/[&<>"']/g, function (ch) {
+      return ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch];
+    });
+  }
+
+  function renderInlineMarkdown(text) {
+    return escapeHTML(text)
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/`([^`]+)`/g, "<code>$1</code>");
+  }
+
+  function formatMB(bytes) {
+    if (!bytes || bytes <= 0) return "";
+    return (bytes / (1000 * 1000)).toFixed(1) + " MB";
+  }
+
+  fetch(endpoint, { headers: { Accept: "application/vnd.github+json" } })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (rel) {
+      if (!rel || !rel.tag_name) return;
+      const verMatch = (rel.tag_name || "").match(/\d+(?:\.\d+)+/) || (rel.name || "").match(/\d+(?:\.\d+)+/);
+      const version = verMatch ? verMatch[0] : rel.tag_name.replace(/^v/i, "");
+      const tagLabel = "v" + version;
+      const assets = Array.isArray(rel.assets) ? rel.assets : [];
+      const dmg = assets.find(function (a) { return /\.dmg$/i.test(a.name || ""); });
+      const dmgURL = dmg && dmg.browser_download_url ? dmg.browser_download_url : null;
+      const sizeStr = dmg ? formatMB(dmg.size) : "";
+
+      document.querySelectorAll("[data-release-tag]").forEach(function (el) { el.textContent = tagLabel; });
+      document.querySelectorAll("[data-release-title]").forEach(function (el) {
+        el.textContent = rel.name || ("KramaIsland " + tagLabel);
+      });
+      if (rel.html_url) {
+        document.querySelectorAll("[data-release-link]").forEach(function (el) { el.href = rel.html_url; });
+      }
+      if (dmgURL) {
+        document.querySelectorAll("[data-dmg-link]").forEach(function (el) { el.href = dmgURL; });
+      }
+      document.querySelectorAll("[data-dmg-meta]").forEach(function (el) {
+        el.textContent = ".dmg · " + tagLabel + (sizeStr ? " · " + sizeStr : "");
+      });
+      if (rel.published_at) {
+        const d = new Date(rel.published_at);
+        if (!isNaN(d.getTime())) {
+          const formatted = d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+          document.querySelectorAll("[data-release-date]").forEach(function (el) { el.textContent = "Released " + formatted; });
+        }
+      }
+      const cmd = document.getElementById("build-cmd");
+      if (cmd) cmd.textContent = "scripts/make-dmg.sh " + version;
+
+      if (rel.body) {
+        const bullets = rel.body
+          .replace(/\r\n/g, "\n")
+          .split("\n")
+          .map(function (l) { return l.trim(); })
+          .filter(function (l) { return l.startsWith("- ") || l.startsWith("* "); })
+          .map(function (l) { return l.slice(2).trim(); });
+        const listEl = document.getElementById("release-notes-list");
+        if (listEl && bullets.length > 0) {
+          listEl.innerHTML = bullets.map(function (b) {
+            return "<li>" + renderInlineMarkdown(b) + "</li>";
+          }).join("");
+        }
+      }
+    })
+    .catch(function () { /* keep static fallback */ });
+})();
+</script>
 
 </body>
 </html>

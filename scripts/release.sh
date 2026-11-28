@@ -30,9 +30,14 @@ gh auth status >/dev/null 2>&1 || { echo "✗ Not signed in to gh. Run: gh auth 
 echo "▸ Updating version to $VERSION"
 perl -pi -e "s/VERSION=\"\\\$\{1:-[0-9.]+\}\"/VERSION=\"\\\${1:-$VERSION}\"/" scripts/make-dmg.sh
 perl -pi -e "s/badge\/version-[0-9.]+-/badge\/version-$VERSION-/g; s/alt=\"Version [0-9.]+\"/alt=\"Version $VERSION\"/g; s/scripts\/make-dmg\.sh [0-9.]+/scripts\/make-dmg.sh $VERSION/g" README.md
+perl -pi -e "s/KramaIsland v[0-9.]+/KramaIsland v$VERSION/g; s/data-release-tag>v[0-9.]+</data-release-tag>v$VERSION</g; s/\.dmg · v[0-9.]+/.dmg · v$VERSION/g; s/scripts\/make-dmg\.sh [0-9.]+/scripts\/make-dmg.sh $VERSION/g" docs/index.html
 
 echo "▸ Building signed KramaIsland $VERSION + DMG"
 scripts/make-dmg.sh "$VERSION"
+
+# Also refresh the static DMG size fallback on the landing page.
+DMG_MB="$(python3 -c 'import os; print(f"{os.path.getsize(\"dist/KramaIsland.dmg\") / 1_000_000:.1f}")')"
+perl -pi -e "s/\.dmg · v$VERSION · [0-9.]+ MB/.dmg · v$VERSION · ${DMG_MB} MB/g" docs/index.html
 
 echo "▸ Committing and pushing to GitHub main"
 git add -A
