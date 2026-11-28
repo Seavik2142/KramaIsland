@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 
 final class MenuBarController: NSObject {
     var openShade: (() -> Void)?
@@ -6,6 +7,19 @@ final class MenuBarController: NSObject {
     var openSettings: (() -> Void)?
 
     private var item: NSStatusItem?
+    private var cancellables = Set<AnyCancellable>()
+    private var showingUpdateBadge = false
+
+    override init() {
+        super.init()
+        Updater.shared.$latest
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refreshIcon() }
+            .store(in: &cancellables)
+        NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.refreshIcon()
+        }
+    }
 
     func setVisible(_ visible: Bool) {
         if visible, item == nil {
@@ -18,15 +32,27 @@ final class MenuBarController: NSObject {
 
     private func make() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        item.button?.image = Self.makeTemplateIcon()
+        self.item = item
+        showingUpdateBadge = !(Updater.shared.available != nil) // force initial draw
+        refreshIcon()
         item.button?.image?.accessibilityDescription = "KramaIsland"
         item.menu = buildMenu()
-        self.item = item
+    }
+
+    private func refreshIcon() {
+        guard let button = item?.button else { return }
+        let hasUpdate = Updater.shared.available != nil
+        guard hasUpdate != showingUpdateBadge || button.image == nil else { return }
+        showingUpdateBadge = hasUpdate
+        button.image = Self.makeTemplateIcon(badge: hasUpdate)
+        button.toolTip = hasUpdate
+            ? "KramaIsland · Update v\(Updater.shared.available?.version ?? "") available"
+            : "KramaIsland"
     }
 
     /// Bespoke Retina template icon: a crisp MacBook display outline with KramaIsland's signature
-    /// top-center Dynamic Island notch cutout. Adapts automatically to light and dark menu bars.
-    private static func makeTemplateIcon() -> NSImage {
+    /// top-center Dynamic Island notch cutout. Shows a crisp dot badge when an update is ready.
+    private static func makeTemplateIcon(badge: Bool = false) -> NSImage {
         let size = NSSize(width: 18, height: 18)
         let image = NSImage(size: size, flipped: false) { _ in
             NSColor.labelColor.setStroke()
@@ -62,6 +88,11 @@ final class MenuBarController: NSObject {
             let pill = NSBezierPath(roundedRect: NSRect(x: frame.midX - 3.6, y: frame.minY + 2.5, width: 7.2, height: 2.0),
                                     xRadius: 1.0, yRadius: 1.0)
             pill.fill()
+
+            if badge {
+                let dot = NSBezierPath(ovalIn: NSRect(x: 13.5, y: 12.6, width: 4.0, height: 4.0))
+                dot.fill()
+            }
             return true
         }
         image.isTemplate = true
@@ -102,8 +133,12 @@ final class MenuBarController: NSObject {
     @objc private func toggleQuiet() { AppSettings.shared.setQuiet(!AppSettings.shared.quietManualOn) }
     @objc private func quietHour() { AppSettings.shared.setQuiet(true, for: 3600) }
     @objc private func updates() {
-        if Updater.shared.newer == nil { Updater.shared.check(manual: true) }
-        SettingsWindowController.shared.show(tab: "updates")
+        if let release = Updater.shared.newer {
+            UpdateAlertWindowController.shared.show(release: release, isPreview: false)
+        } else {
+            Updater.shared.check(manual: true)
+            SettingsWindowController.shared.show(tab: "updates")
+        }
     }
     @objc private func toggleLogin(_ sender: NSMenuItem) {
         LaunchAtLogin.set(!LaunchAtLogin.isEnabled)

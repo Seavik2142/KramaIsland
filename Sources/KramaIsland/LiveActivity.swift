@@ -122,10 +122,18 @@ final class ActivityCenter: ObservableObject {
 struct ActivityHUD: View {
     let activity: LiveActivity
 
+    private var isUpdateAlert: Bool {
+        activity.kind == .update && activity.id == "update"
+    }
+
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 11) {
             if let image = activity.image {
-                Image(nsImage: image).resizable().frame(width: 30, height: 30)
+                Image(nsImage: image)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 30, height: 30)
+                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
             } else {
                 IconBadge(symbol: activity.symbol, tint: activity.tint, size: 30)
             }
@@ -135,8 +143,18 @@ struct ActivityHUD: View {
                     Text(activity.subtitle).font(UI.body(10.5)).foregroundStyle(UI.secondaryText).lineLimit(1)
                 }
             }
-            Spacer(minLength: 8)
-            if let p = activity.progress {
+            Spacer(minLength: 6)
+            if isUpdateAlert {
+                HStack(spacing: 6) {
+                    PillButton(title: "Update", symbol: "arrow.down.circle.fill", prominent: true, small: true,
+                               help: "Download and install the latest KramaIsland update") {
+                        Updater.shared.triggerPrimaryUpdateAction()
+                    }
+                    IconButton(symbol: "xmark", size: 22, help: "Dismiss") {
+                        ActivityCenter.shared.dismiss(id: "update")
+                    }
+                }
+            } else if let p = activity.progress {
                 if activity.kind == .volume || activity.kind == .battery {
                     TrackBar(fraction: p, tint: activity.tint, height: 6).frame(width: 72)
                 } else {

@@ -84,8 +84,12 @@ struct NotchView: View {
             case .banner, .volume: break    // interactive HUD / banner handles its own taps & buttons
             case .activity:
                 if state.activity?.kind == .update {
-                    state.activities.dismiss(id: "update")
-                    SettingsWindowController.shared.show(tab: "updates")
+                    ActivityCenter.shared.dismiss(id: "update")
+                    if let release = Updater.shared.activeAlertRelease {
+                        UpdateAlertWindowController.shared.show(release: release, isPreview: Updater.shared.previewRelease != nil)
+                    } else {
+                        SettingsWindowController.shared.show(tab: "updates")
+                    }
                 } else {
                     state.activities.dismissByUser()
                 }
@@ -219,12 +223,13 @@ struct NotchView: View {
                 if let media = state.media {
                     MediaCard(media: media, controller: state.mediaController)
                 }
+                if let release = updater.available {
+                    updateRow(release)
+                }
                 if let note = state.footerNotification {
                     recentRow(note)
                 } else if let hint = state.hint {
                     hintRow(hint)
-                } else if let release = updater.available {
-                    updateRow(release)
                 }
             }
         }
@@ -356,7 +361,7 @@ struct NotchView: View {
         .help(isAction ? "\(hint.text) Click to open System Settings." : hint.text)
     }
 
-    /// A newer release is out; the row opens Settings ▸ Updates with the notes and the Update button.
+    /// A newer release is out; lets the user update in one click or inspect release notes.
     private func updateRow(_ release: AppRelease) -> some View {
         let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
         return HStack(spacing: 9) {
@@ -365,22 +370,29 @@ struct NotchView: View {
                 .foregroundStyle(UI.info)
                 .frame(width: 24, height: 24)
                 .background(UI.info.opacity(0.16), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            Text("KramaIsland \(release.version) is available")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(.white.opacity(0.85))
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Update Available · v\(release.version)")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.94))
+                    .lineLimit(1)
+                Text("Tap for release notes or update in place")
+                    .font(.system(size: 9.5, weight: .medium))
+                    .foregroundStyle(UI.secondaryText)
+                    .lineLimit(1)
+            }
             Spacer(minLength: 4)
-            PillButton(title: "What's new", small: true, help: "Open Settings ▸ Updates") {
-                SettingsWindowController.shared.show(tab: "updates")
+            PillButton(title: "Update", symbol: "arrow.down.circle.fill", prominent: true, small: true,
+                       help: "Download and install KramaIsland \(release.version)") {
+                Updater.shared.triggerPrimaryUpdateAction()
             }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .background(UI.info.opacity(0.10), in: shape)
-        .overlay(shape.strokeBorder(UI.info.opacity(0.22), lineWidth: 0.75))
+        .background(UI.info.opacity(0.12), in: shape)
+        .overlay(shape.strokeBorder(UI.info.opacity(0.28), lineWidth: 0.75))
         .contentShape(shape)
-        .onTapGesture { SettingsWindowController.shared.show(tab: "updates") }
-        .help("Open Settings ▸ Updates")
+        .onTapGesture { UpdateAlertWindowController.shared.show(release: release, isPreview: false) }
+        .help("View what's new in KramaIsland \(release.version)")
     }
 }
 

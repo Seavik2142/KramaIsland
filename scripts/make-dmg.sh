@@ -18,7 +18,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="${1:-1.4.0}"
+VERSION="${1:-1.5.0}"
 BUILD="$(date +%Y%m%d%H%M)"
 APP="dist/KramaIsland.app"
 ROOT="dist/dmg-root"

@@ -4,7 +4,7 @@
   <p><strong>A native, 120 fps Dynamic Island for macOS — media, volume, window tiling, notifications, clipboard &amp; launcher in one seamless obsidian surface.</strong></p>
 
   <p>
-    <a href="https://github.com/Seavik2142/KramaIsland/releases"><img src="https://img.shields.io/badge/version-1.4.0-0A84FF?style=flat-square" alt="Version 1.4.0" /></a>
+    <a href="https://github.com/Seavik2142/KramaIsland/releases"><img src="https://img.shields.io/badge/version-1.5.0-0A84FF?style=flat-square" alt="Version 1.5.0" /></a>
     <img src="https://img.shields.io/badge/macOS-13.0%2B-111827?style=flat-square&logo=apple&logoColor=white" alt="macOS 13+" />
     <img src="https://img.shields.io/badge/architecture-Apple%20Silicon-111827?style=flat-square" alt="Apple Silicon" />
     <img src="https://img.shields.io/badge/Swift-5.9%2B-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 5.9+" />
@@ -12,7 +12,7 @@
   </p>
 
   <p>
-    <a href="https://github.com/Seavik2142/KramaIsland/raw/main/dist/KramaIsland.dmg"><strong>Download KramaIsland.dmg</strong></a>
+    <a href="https://github.com/Seavik2142/KramaIsland/releases/latest/download/KramaIsland.dmg"><strong>Download KramaIsland.dmg</strong></a>
     &nbsp;·&nbsp;
     <a href="https://github.com/Seavik2142/KramaIsland/releases">Releases</a>
     &nbsp;·&nbsp;
@@ -46,7 +46,9 @@ Built from scratch in **Swift, SwiftUI, AppKit, and CoreAudio** with zero extern
 - **Bezel-Matched Surface** — Measures the real physical notch from `NSScreen` with smooth concave top shoulders, balanced 34 pt live ears on notched MacBooks, and a unified compact Dynamic Island pill on non-notch and external monitors.
 - **Full Horizontal & Vertical Sizing** — Customize the open island width (`360–760 pt`), vertical height (`320–860 pt`), and compact bar extra width/height in **Settings ▸ General ▸ Dynamic Island Size** (with presets and real-time **Live Preview**), or drag the Shade's bottom-right corner grip directly.
 - **120 fps Zero-Lag Hover** — Instant hover readout with clock, Mic/Camera/Focus/Awake indicators, battery badge, active timer, upcoming calendar meeting, and Now Playing.
-- **Live Display Picker & Quiet Mode** — Pin the island to Auto, Main, or any specific connected monitor, hide over full-screen/selected apps, or silence popups via Quiet Mode (manual, 1-hour timer, or synced with macOS Focus).
+- **All Connected Displays & Auto Full-Screen Video Hiding** — Runs simultaneously on **All Displays** (built-in MacBook notch + external monitors), **Follow Cursor**, or any pinned monitor, and automatically hides per-display whenever you play full-screen videos (YouTube, Safari, Chrome, VLC, IINA, QuickTime).
+- **Zero-Lag AirDrop & File Shelf** — Drag any file, folder, or browser image toward the top-center of any display to magnetically open side-by-side **AirDrop | File Shelf** drop zones with pre-warmed native macOS AirDrop, instant O(1) drag-out, and an always-accessible Shade card.
+- **Automatic Update Alerts & 1-Click In-Place Updates** — Lightweight ETag checks on launch, wake, and every 2 hours notify users via an interactive Dynamic Island HUD, native Update Alert sheet with release notes, and Menu Bar badge — then download, verify the signing certificate (preserving macOS permissions), swap in place, and relaunch.
 
 ### Native CoreAudio Volume HUD (Replaces macOS Volume Overlay)
 - **Zero-Latency Volume Control** — Powered directly by CoreAudio / AudioToolbox listeners rather than AppleScript polling.
@@ -78,7 +80,7 @@ Built from scratch in **Swift, SwiftUI, AppKit, and CoreAudio** with zero extern
 ## Installation
 
 ### Download DMG (Recommended)
-1. Download **[KramaIsland.dmg](https://github.com/Seavik2142/KramaIsland/raw/main/dist/KramaIsland.dmg)** and drag **KramaIsland** into **Applications**.
+1. Download **[KramaIsland.dmg](https://github.com/Seavik2142/KramaIsland/releases/latest/download/KramaIsland.dmg)** and drag **KramaIsland** into **Applications**.
 2. **First Launch (Gatekeeper):** Because KramaIsland is free, open source, and signed with the project's stable local certificate rather than a paid notarized Developer ID, macOS will ask you to confirm the first launch once:
    - **macOS 15+:** Click **Done**, then open **System Settings ▸ Privacy & Security**, scroll to *"KramaIsland was blocked"*, and click **Open Anyway**.
    - **macOS 13–14:** Right-click `KramaIsland.app` in Applications ▸ **Open**.
@@ -87,7 +89,7 @@ Built from scratch in **Swift, SwiftUI, AppKit, and CoreAudio** with zero extern
      xattr -dr com.apple.quarantine /Applications/KramaIsland.app
      ```
 3. **Grant Permissions You Want to Use:** Open **KramaIsland Settings ▸ Privacy** for one-click status checks and direct links to System Settings.
-4. **Stay Updated Automatically:** KramaIsland checks [GitHub Releases](https://github.com/Seavik2142/KramaIsland/releases) once per day (optional) and installs signature-verified updates in place via **Settings ▸ Updates**.
+4. **Automatic Update Alerts:** Whenever a new release is published to [GitHub Releases](https://github.com/Seavik2142/KramaIsland/releases), KramaIsland alerts you in the Dynamic Island and with a clean Update Alert window — click **Update & Relaunch** to install in place while keeping all macOS permissions.
 
 ### Build & Run from Source
 
@@ -103,7 +105,13 @@ To build a signed `.app` bundle and distributable `.dmg`:
 
 ```bash
 scripts/signing-identity.sh   # one-time setup: creates stable "KramaIsland Developer" cert
-scripts/make-dmg.sh 1.4.0     # builds dist/KramaIsland.app and dist/KramaIsland.dmg
+scripts/make-dmg.sh 1.5.0     # builds dist/KramaIsland.app and dist/KramaIsland.dmg
+```
+
+To publish a new release so every user automatically receives an update alert:
+
+```bash
+scripts/release.sh 1.5.0      # builds, signs, pushes, and publishes GitHub Release with DMG
 ```
 
 > **Tip:** To regenerate the app icon assets from `Resources/AppIcon-artwork.jpg`:

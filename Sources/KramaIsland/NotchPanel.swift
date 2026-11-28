@@ -462,6 +462,14 @@ final class NotchPanelManager {
             state.setBannerHovered(false)
         }
 
+        // Keep an interactive Update Available HUD under the cursor so the user can click Update / X directly.
+        if state.activity?.kind == .update, state.activity?.id == "update",
+           let actID = panels.keys.first(where: { state.layout(for: $0).mode == .activity }),
+           hitDisplayID == actID {
+            hoveredDisplayID = nil
+            return
+        }
+
         if hitDisplayID != hoveredDisplayID {
             let previous = hoveredDisplayID
             hoveredDisplayID = hitDisplayID

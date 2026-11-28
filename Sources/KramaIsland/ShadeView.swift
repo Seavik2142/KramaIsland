@@ -147,8 +147,9 @@ struct ShadeContent: View {
             IconButton(symbol: "gearshape.fill", size: 30, help: "Settings") { SettingsWindowController.shared.show() }
             if let release = updater.available {
                 PillButton(title: "Update", symbol: "arrow.down.circle.fill", prominent: true,
-                           help: "KramaIsland \(release.version) is available: see what's new and update") {
-                    SettingsWindowController.shared.show(tab: "updates")
+                           help: "KramaIsland \(release.version) is available: view release notes and update") {
+                    state.closeShade()
+                    UpdateAlertWindowController.shared.show(release: release, isPreview: false)
                 }
             }
             if state.hasNotifications {

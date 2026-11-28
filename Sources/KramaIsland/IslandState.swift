@@ -876,6 +876,14 @@ final class IslandState: ObservableObject {
             QuickAction(id: "volume.mute", title: "Toggle Mute Volume", symbol: "speaker.slash.fill", keywords: ["volume", "mute", "unmute", "sound", "audio"]) { [weak self] in self?.volume.toggleMute(showHUD: true) },
             QuickAction(id: "volume.up", title: "Volume Up", symbol: "speaker.wave.3.fill", keywords: ["volume", "louder", "up", "sound", "audio"]) { [weak self] in self?.volume.step(up: true) },
             QuickAction(id: "volume.down", title: "Volume Down", symbol: "speaker.wave.1.fill", keywords: ["volume", "quieter", "down", "sound", "audio"]) { [weak self] in self?.volume.step(up: false) },
+            QuickAction(id: "updates.check", title: "Check for Updates", symbol: "arrow.down.circle.fill", keywords: ["update", "upgrade", "release", "version", "new"]) {
+                if let release = Updater.shared.newer {
+                    UpdateAlertWindowController.shared.show(release: release, isPreview: false)
+                } else {
+                    Updater.shared.check(manual: true)
+                    SettingsWindowController.shared.show(tab: "updates")
+                }
+            },
             QuickAction(id: "settings", title: "KramaIsland Settings", symbol: "gear", keywords: ["settings", "preferences", "options"]) { SettingsWindowController.shared.show() },
         ]
     }

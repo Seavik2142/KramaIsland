@@ -79,16 +79,25 @@ struct UpdatesSettingsView: View {
             SettingSection("Automatic Updates") {
                 SettingToggleRow(
                     symbol: "arrow.triangle.2.circlepath", tint: .blue,
-                    title: "Check for updates daily",
-                    subtitle: "Queries GitHub Releases once per day with zero telemetry",
+                    title: "Check for updates automatically",
+                    subtitle: "Checks on launch, wake, and every 2 hours via lightweight ETag (zero telemetry)",
                     isOn: $settings.updatesAutoCheck
                 )
                 SettingDivider()
                 SettingToggleRow(
                     symbol: "bell.badge.fill", tint: .indigo,
-                    title: "Announce in the island",
-                    subtitle: "Show a brief HUD under the notch when a new release arrives",
+                    title: "Alert in the Dynamic Island",
+                    subtitle: "Drops an interactive Update Available HUD under the notch with one-click Update",
                     isOn: $settings.updatesNotify
+                )
+                .disabled(!settings.updatesAutoCheck)
+                .opacity(settings.updatesAutoCheck ? 1 : 0.55)
+                SettingDivider()
+                SettingToggleRow(
+                    symbol: "macwindow.badge.plus", tint: .cyan,
+                    title: "Show update alert window",
+                    subtitle: "Opens a release-notes alert once per new version with Update & Relaunch",
+                    isOn: $settings.updatesShowAlert
                 )
                 .disabled(!settings.updatesAutoCheck)
                 .opacity(settings.updatesAutoCheck ? 1 : 0.55)
@@ -100,8 +109,13 @@ struct UpdatesSettingsView: View {
                     title: "Signature-verified swap",
                     subtitle: "Downloads the release DMG, verifies it matches this copy's signing certificate so macOS permissions survive, swaps it in place, and relaunches."
                 ) {
-                    Button("GitHub Releases") { updater.openReleasePage() }
-                        .controlSize(.small)
+                    HStack(spacing: 8) {
+                        Button("Preview Alert") { updater.previewUpdateAlert() }
+                            .controlSize(.small)
+                            .help("Preview the Dynamic Island & macOS update alert that users see")
+                        Button("GitHub Releases") { updater.openReleasePage() }
+                            .controlSize(.small)
+                    }
                 }
             }
         }
@@ -311,5 +325,247 @@ struct ReleaseNotesView: View {
             }
         }
         return blocks
+    }
+}
+
+// MARK: - Native Floating Update Alert Window
+
+/// Presents a crisp, macOS-native Update Available alert dialog with release notes, version diff,
+/// live download/install progress, and one-click Update & Relaunch.
+final class UpdateAlertWindowController {
+    static let shared = UpdateAlertWindowController()
+    private var window: NSWindow?
+    private var hosting: NSHostingView<UpdateAlertView>?
+
+    func show(release: AppRelease, isPreview: Bool = false) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            let view = UpdateAlertView(release: release, isPreview: isPreview)
+            if let window = self.window, let hosting = self.hosting {
+                hosting.rootView = view
+                NSApp.activate(ignoringOtherApps: true)
+                window.makeKeyAndOrderFront(nil)
+                return
+            }
+
+            let w = NSWindow(
+                contentRect: NSRect(x: 0, y: 0, width: 470, height: 390),
+                styleMask: [.titled, .closable, .fullSizeContentView],
+                backing: .buffered,
+                defer: false
+            )
+            w.title = "Software Update"
+            w.titleVisibility = .hidden
+            w.titlebarAppearsTransparent = true
+            w.isMovableByWindowBackground = true
+            w.level = .floating
+            w.isReleasedWhenClosed = false
+            let host = NSHostingView(rootView: view)
+            w.contentView = host
+            w.center()
+
+            NotificationCenter.default.addObserver(forName: NSWindow.willCloseNotification, object: w, queue: .main) { _ in
+                if Updater.shared.previewRelease != nil {
+                    Updater.shared.previewRelease = nil
+                }
+            }
+
+            self.window = w
+            self.hosting = host
+            NSApp.activate(ignoringOtherApps: true)
+            w.makeKeyAndOrderFront(nil)
+        }
+    }
+
+    func close() {
+        DispatchQueue.main.async { [weak self] in
+            self?.window?.orderOut(nil)
+        }
+    }
+}
+
+private struct UpdateAlertView: View {
+    let release: AppRelease
+    let isPreview: Bool
+    @ObservedObject private var updater = Updater.shared
+
+    private var formattedSize: String? {
+        guard release.dmgSize > 0 else { return nil }
+        return ByteCountFormatter.string(fromByteCount: release.dmgSize, countStyle: .file)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // Header
+            HStack(alignment: .center, spacing: 14) {
+                Image(nsImage: BrandIcon.image)
+                    .resizable()
+                    .interpolation(.high)
+                    .frame(width: 58, height: 58)
+                    .shadow(color: .black.opacity(0.28), radius: 7, y: 2)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 7) {
+                        Text("Update Available")
+                            .font(.system(size: 16.5, weight: .bold))
+                        if isPreview {
+                            Text("Preview")
+                                .font(.system(size: 9.5, weight: .semibold))
+                                .foregroundStyle(.orange)
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 2)
+                                .background(Color.orange.opacity(0.16), in: Capsule())
+                        }
+                    }
+                    Text("A new version of KramaIsland is ready to install.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+
+                    HStack(spacing: 6) {
+                        Text("v\(Updater.currentVersion)")
+                            .font(.system(size: 10.5, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.secondary)
+                        Image(systemName: "arrow.right")
+                            .font(.system(size: 8.5, weight: .bold))
+                            .foregroundStyle(.secondary)
+                        Text("v\(release.version)")
+                            .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 2)
+                            .background(Color.accentColor, in: Capsule())
+                        if let size = formattedSize {
+                            Text("· \(size)")
+                                .font(.system(size: 10.5))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .padding(.top, 2)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.top, 10)
+
+            // Release Notes Card
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Release Notes")
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    if let date = release.publishedAt {
+                        Text(date.formatted(date: .abbreviated, time: .omitted))
+                            .font(.system(size: 10.5))
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+                ScrollView {
+                    if release.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text("Bug fixes, performance improvements, and refinements.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    } else {
+                        ReleaseNotesView(markdown: release.notes)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .frame(maxHeight: 165)
+            }
+            .padding(12)
+            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
+
+            // Live Progress / Error
+            statusSection
+
+            // Footer Actions
+            HStack(spacing: 8) {
+                if !updater.phase.isBusy {
+                    Button("Skip This Version") {
+                        updater.skip(true)
+                    }
+                    .controlSize(.regular)
+                    .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                if !updater.phase.isBusy {
+                    Button("Remind Me Later") {
+                        updater.remindLater(for: release.version)
+                    }
+                    .controlSize(.regular)
+                    .keyboardShortcut(.cancelAction)
+                }
+
+                if isPreview {
+                    Button("Done") {
+                        updater.remindLater(for: release.version)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.regular)
+                    .keyboardShortcut(.defaultAction)
+                } else if !updater.phase.isBusy {
+                    if updater.canInstall && release.dmgURL != nil {
+                        Button("Update & Relaunch") {
+                            updater.install()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.regular)
+                        .keyboardShortcut(.defaultAction)
+                    } else {
+                        Button("Download Update…") {
+                            updater.openReleasePage()
+                            UpdateAlertWindowController.shared.close()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.regular)
+                        .keyboardShortcut(.defaultAction)
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 22)
+        .padding(.top, 16)
+        .padding(.bottom, 18)
+        .frame(width: 470)
+    }
+
+    @ViewBuilder private var statusSection: some View {
+        switch updater.phase {
+        case .downloading(let fraction):
+            VStack(alignment: .leading, spacing: 5) {
+                ProgressView(value: max(0, min(1, fraction)))
+                Text("Downloading KramaIsland \(release.version)… \(UpdatesSettingsView.bytes(fraction, of: release.dmgSize))")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+        case .installing:
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text("Verifying signature and installing update…")
+                    .font(.system(size: 11.5))
+            }
+        case .relaunching:
+            HStack(spacing: 8) {
+                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                Text("Update installed! Relaunching KramaIsland…")
+                    .font(.system(size: 11.5, weight: .medium))
+            }
+        case .failed(let message):
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.red)
+                Text(message)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        default:
+            EmptyView()
+        }
     }
 }

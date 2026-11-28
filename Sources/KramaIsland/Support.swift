@@ -97,10 +97,13 @@ final class AppSettings: ObservableObject {
     @Pref("quietAllowCustom", false) var quietAllowCustom: Bool             // activities pushed from Shortcuts
 
     // Updates (Settings ▸ Updates, see Updater.swift)
-    @Pref("updatesAutoCheck", true) var updatesAutoCheck: Bool              // ask GitHub once a day
-    @Pref("updatesNotify", true) var updatesNotify: Bool                    // HUD in the island when one is found
+    @Pref("updatesAutoCheck", true) var updatesAutoCheck: Bool              // ETag check on launch, wake & every 2 h
+    @Pref("updatesNotify", true) var updatesNotify: Bool                    // interactive HUD in the island when a new release arrives
+    @Pref("updatesShowAlert", true) var updatesShowAlert: Bool              // native floating Update Alert window once per new release
     @Pref("updatesSkippedVersion", "") var updatesSkippedVersion: String
     @Pref("updatesLastCheck", 0.0) var updatesLastCheck: Double             // timeIntervalSince1970
+    @Pref("updatesLastAlertedVersion", "") var updatesLastAlertedVersion: String
+    @Pref("updatesLastAlertTime", 0.0) var updatesLastAlertTime: Double     // rate-limits "Remind Me Later" popups
 
     // Privacy (Settings ▸ Privacy & Permissions)
     @Pref("privacyHideNotificationBody", false) var privacyHideNotificationBody: Bool
