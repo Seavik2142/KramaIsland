@@ -75,10 +75,10 @@ final class NotchPanel: NSPanel {
     func reposition(to geo: NotchGeometry) {
         geometry = geo
         let sf = geo.screen.frame
-        let s = AppSettings.shared
-        let maxBodyW = max(IslandLayout.launcherWidth, s.clampedIslandWidth + 110)
+        let size = AppSettings.shared.sizeProfile(for: geo.screen)
+        let maxBodyW = max(IslandLayout.launcherWidth, size.clampedWidth + 110)
         let width = min(sf.width, max(Self.fixedWidth, maxBodyW + 84))
-        let height = min(sf.height, max(Self.fixedHeight, s.clampedIslandHeight + 230))
+        let height = min(sf.height, max(Self.fixedHeight, size.clampedHeight + 230))
         let target = NSRect(x: (sf.midX - width / 2).rounded(),
                             y: sf.maxY - height,
                             width: width,

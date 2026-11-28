@@ -18,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let displayPreference: String
         let islandWidth: Double
         let islandHeight: Double
+        let islandDisplaySizesJSON: String
         let hideInFullscreen: Bool
         let hideInFullscreenMode: String
         let hiddenApps: String
@@ -31,6 +32,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 displayPreference: s.displayPreference,
                 islandWidth: s.islandWidth,
                 islandHeight: s.islandHeight,
+                islandDisplaySizesJSON: s.islandDisplaySizesJSON,
                 hideInFullscreen: s.hideInFullscreen,
                 hideInFullscreenMode: s.hideInFullscreenMode,
                 hiddenApps: s.hiddenApps,
@@ -97,7 +99,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             if prev?.displayPreference != curr.displayPreference
                 || prev?.islandWidth != curr.islandWidth
-                || prev?.islandHeight != curr.islandHeight {
+                || prev?.islandHeight != curr.islandHeight
+                || prev?.islandDisplaySizesJSON != curr.islandDisplaySizesJSON {
                 self.panels.syncDisplays()
             }
             if prev?.hideInFullscreen != curr.hideInFullscreen

@@ -109,9 +109,15 @@ final class IslandState: ObservableObject {
     }
 
     /// Computes the exact `IslandLayout` for a given display so hovering or opening Shade/Launcher
-    /// on Display 2 expands ONLY Display 2 while other displays remain cleanly compact/collapsed.
+    /// on Display 2 expands ONLY Display 2 while applying THAT display's own configured dimensions.
     func layout(for displayID: CGDirectDisplayID) -> IslandLayout {
         var l = layout
+        let size = settings.sizeProfile(forDisplayID: displayID)
+        l.customWidth = size.clampedWidth
+        l.customHeight = size.clampedHeight
+        l.compactWidthOffset = size.clampedCompactWidthOffset
+        l.compactHeightOffset = size.clampedCompactHeightOffset
+
         let ears = l.compactEars
         let isInteractiveOwner = (displayID == activeDisplayID)
         let isAlertOwner = (displayID == preferredAlertDisplayID)
@@ -441,22 +447,23 @@ final class IslandState: ObservableObject {
         l.showsMedia = media != nil
         l.compactEars = ears
         l.showsFooter = footerNotification != nil || hint != nil
-        l.customWidth = settings.clampedIslandWidth
-        l.customHeight = settings.clampedIslandHeight
-        l.compactWidthOffset = settings.clampedCompactWidthOffset
-        l.compactHeightOffset = settings.clampedCompactHeightOffset
+        let activeSize = settings.sizeProfile(forDisplayID: activeDisplayID)
+        l.customWidth = activeSize.clampedWidth
+        l.customHeight = activeSize.clampedHeight
+        l.compactWidthOffset = activeSize.clampedCompactWidthOffset
+        l.compactHeightOffset = activeSize.clampedCompactHeightOffset
         if l != layout { layout = l }
     }
 
-    func setSizePreview(_ active: Bool) {
+    func setSizePreview(_ active: Bool, on displayID: CGDirectDisplayID? = nil) {
         isSizePreviewActive = active
         if active {
-            if !isShadeOpen {
-                withAnimation(Motion.spring) {
-                    isLauncherOpen = false
-                    banner = nil
-                    isShadeOpen = true
-                }
+            let target = displayID.map { resolvedTargetDisplay(preferred: $0) } ?? activeDisplayID
+            withAnimation(Motion.spring) {
+                if activeDisplayID != target { activeDisplayID = target }
+                isLauncherOpen = false
+                banner = nil
+                if !isShadeOpen { isShadeOpen = true }
             }
         } else if isShadeOpen {
             closeShade()

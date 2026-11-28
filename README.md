@@ -4,7 +4,7 @@
   <p><strong>A native, 120 fps Dynamic Island for macOS — media, volume, window tiling, notifications, clipboard &amp; launcher in one seamless obsidian surface.</strong></p>
 
   <p>
-    <a href="https://github.com/Seavik2142/KramaIsland/releases"><img src="https://img.shields.io/badge/version-1.5.0-0A84FF?style=flat-square" alt="Version 1.5.0" /></a>
+    <a href="https://github.com/Seavik2142/KramaIsland/releases"><img src="https://img.shields.io/badge/version-1.5.1-0A84FF?style=flat-square" alt="Version 1.5.1" /></a>
     <img src="https://img.shields.io/badge/macOS-13.0%2B-111827?style=flat-square&logo=apple&logoColor=white" alt="macOS 13+" />
     <img src="https://img.shields.io/badge/architecture-Apple%20Silicon-111827?style=flat-square" alt="Apple Silicon" />
     <img src="https://img.shields.io/badge/Swift-5.9%2B-F05138?style=flat-square&logo=swift&logoColor=white" alt="Swift 5.9+" />
@@ -105,7 +105,7 @@ To build a signed `.app` bundle and distributable `.dmg`:
 
 ```bash
 scripts/signing-identity.sh   # one-time setup: creates stable "KramaIsland Developer" cert
-scripts/make-dmg.sh 1.5.0     # builds dist/KramaIsland.app and dist/KramaIsland.dmg
+scripts/make-dmg.sh 1.5.1     # builds dist/KramaIsland.app and dist/KramaIsland.dmg
 ```
 
 To publish a new release so every user automatically receives an update alert:

@@ -36,7 +36,7 @@ echo "▸ Building signed KramaIsland $VERSION + DMG"
 scripts/make-dmg.sh "$VERSION"
 
 # Also refresh the static DMG size fallback on the landing page.
-DMG_MB="$(python3 -c 'import os; print(f"{os.path.getsize(\"dist/KramaIsland.dmg\") / 1_000_000:.1f}")')"
+DMG_MB="$(python3 -c "import os; print('{:.1f}'.format(os.path.getsize('dist/KramaIsland.dmg') / 1_000_000))")"
 perl -pi -e "s/\.dmg · v$VERSION · [0-9.]+ MB/.dmg · v$VERSION · ${DMG_MB} MB/g" docs/index.html
 
 echo "▸ Committing and pushing to GitHub main"

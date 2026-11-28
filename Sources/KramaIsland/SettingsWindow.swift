@@ -131,6 +131,8 @@ struct SettingsView: View {
     @State private var clearedLocalData = false
     @State private var showAdvancedIntegrations = false
     @State private var liveSizePreview = false
+    @State private var selectedSizeDisplayKey: String = AppSettings.allDisplaysSizeKey
+    @State private var screenRefreshTick: Int = 0
 
     private static let accentSwatches: [(name: String, hex: String, color: Color)] = [
         ("White", "#FFFFFF", .white),
@@ -173,6 +175,13 @@ struct SettingsView: View {
         }
         .onReceive(Timer.publish(every: 2, on: .main, in: .common).autoconnect()) { _ in refreshPermissions() }
         .onReceive(NotificationCenter.default.publisher(for: .notchPermissionsReset)) { _ in refreshPermissions() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didChangeScreenParametersNotification)) { _ in
+            screenRefreshTick += 1
+            if selectedSizeDisplayKey != AppSettings.allDisplaysSizeKey,
+               !NSScreen.screens.contains(where: { $0.localizedName == selectedSizeDisplayKey }) {
+                selectedSizeDisplayKey = AppSettings.allDisplaysSizeKey
+            }
+        }
     }
 
     // MARK: - Sidebar
@@ -348,17 +357,20 @@ struct SettingsView: View {
             }
 
             SettingSection("Dynamic Island Size") {
+                islandSizeDisplayPickerRow
+                SettingDivider()
                 islandSizePreviewRow
                 SettingDivider()
                 SettingRow(
                     symbol: "arrow.left.and.right", tint: .blue,
                     title: "Horizontal width",
-                    subtitle: "Full width of the open Shade, Hover readout, Banner, and HUD"
+                    subtitle: selectedSizeScopeDescription(base: "Full width of the open Shade, Hover readout, Banner, and HUD")
                 ) {
+                    let profile = activeSizeProfile
                     HStack(spacing: 8) {
-                        Slider(value: $settings.islandWidth, in: 360...760, step: 4)
+                        Slider(value: sizeBinding(\.width), in: 360...760, step: 4)
                             .frame(width: 150)
-                        Text("\(Int(settings.clampedIslandWidth)) pt")
+                        Text("\(Int(profile.clampedWidth)) pt")
                             .font(.system(size: 11.5, weight: .semibold, design: .rounded))
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
@@ -369,12 +381,13 @@ struct SettingsView: View {
                 SettingRow(
                     symbol: "arrow.up.and.down", tint: .indigo,
                     title: "Vertical height",
-                    subtitle: "Full vertical height of the open Dynamic Island Shade"
+                    subtitle: selectedSizeScopeDescription(base: "Full vertical height of the open Dynamic Island Shade")
                 ) {
+                    let profile = activeSizeProfile
                     HStack(spacing: 8) {
-                        Slider(value: $settings.islandHeight, in: 320...860, step: 10)
+                        Slider(value: sizeBinding(\.height), in: 320...860, step: 10)
                             .frame(width: 150)
-                        Text("\(Int(settings.clampedIslandHeight)) pt")
+                        Text("\(Int(profile.clampedHeight)) pt")
                             .font(.system(size: 11.5, weight: .semibold, design: .rounded))
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
@@ -385,12 +398,13 @@ struct SettingsView: View {
                 SettingRow(
                     symbol: "arrow.left.to.line.compact", tint: .cyan,
                     title: "Compact bar extra width",
-                    subtitle: "Adjusts horizontal width of the resting notch ears or compact pill"
+                    subtitle: selectedSizeScopeDescription(base: "Adjusts horizontal width of the resting notch ears or compact pill")
                 ) {
+                    let profile = activeSizeProfile
                     HStack(spacing: 8) {
-                        Slider(value: $settings.islandCompactWidthOffset, in: -10...160, step: 2)
+                        Slider(value: sizeBinding(\.compactWidthOffset), in: -10...160, step: 2)
                             .frame(width: 150)
-                        let cw = Int(settings.clampedCompactWidthOffset)
+                        let cw = Int(profile.clampedCompactWidthOffset)
                         Text(cw >= 0 ? "+\(cw) pt" : "\(cw) pt")
                             .font(.system(size: 11.5, weight: .semibold, design: .rounded))
                             .monospacedDigit()
@@ -402,12 +416,13 @@ struct SettingsView: View {
                 SettingRow(
                     symbol: "arrow.up.and.down.square", tint: .teal,
                     title: "Compact bar extra height",
-                    subtitle: "Increases vertical thickness of the resting Dynamic Island bar"
+                    subtitle: selectedSizeScopeDescription(base: "Increases vertical thickness of the resting Dynamic Island bar")
                 ) {
+                    let profile = activeSizeProfile
                     HStack(spacing: 8) {
-                        Slider(value: $settings.islandCompactHeightOffset, in: 0...24, step: 1)
+                        Slider(value: sizeBinding(\.compactHeightOffset), in: 0...24, step: 1)
                             .frame(width: 150)
-                        Text("+\(Int(settings.clampedCompactHeightOffset)) pt")
+                        Text("+\(Int(profile.clampedCompactHeightOffset)) pt")
                             .font(.system(size: 11.5, weight: .semibold, design: .rounded))
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
@@ -1205,11 +1220,160 @@ struct SettingsView: View {
         }
     }
 
+    private var connectedScreens: [NSScreen] {
+        _ = screenRefreshTick
+        return NSScreen.screens
+    }
+
+    private var selectedSizeScreen: NSScreen? {
+        guard selectedSizeDisplayKey != AppSettings.allDisplaysSizeKey else { return nil }
+        return connectedScreens.first { $0.localizedName == selectedSizeDisplayKey }
+    }
+
+    private var activeSizeProfile: IslandSizeProfile {
+        settings.sizeProfile(forSelection: selectedSizeDisplayKey)
+    }
+
+    private func sizeBinding(_ keyPath: WritableKeyPath<IslandSizeProfile, Double>) -> Binding<Double> {
+        Binding(
+            get: { settings.sizeProfile(forSelection: selectedSizeDisplayKey)[keyPath: keyPath] },
+            set: { newVal in
+                var p = settings.sizeProfile(forSelection: selectedSizeDisplayKey)
+                p[keyPath: keyPath] = newVal
+                settings.setSizeProfile(p, forSelection: selectedSizeDisplayKey)
+            }
+        )
+    }
+
+    private func selectedSizeScopeDescription(base: String) -> String {
+        guard selectedSizeDisplayKey != AppSettings.allDisplaysSizeKey else { return base }
+        return "\(base) · \(selectedSizeDisplayKey)"
+    }
+
+    private var islandSizeDisplayPickerRow: some View {
+        let screens = connectedScreens
+        let mainID = NSScreen.screens.first?.displayID
+
+        return VStack(alignment: .leading, spacing: 9) {
+            HStack(spacing: 10) {
+                Image(systemName: "display.2")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(.blue)
+                    .frame(width: 28, height: 28)
+                    .background(Color.blue.opacity(0.14), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                VStack(alignment: .leading, spacing: 1.5) {
+                    Text("Configure display")
+                        .font(.system(size: 12.5, weight: .medium))
+                    Text("Tune one default size for all screens, or customize your Main Display and external monitors independently")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 4)
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 7) {
+                    displaySizeChip(
+                        key: AppSettings.allDisplaysSizeKey,
+                        symbol: "rectangle.on.rectangle",
+                        title: "All Displays",
+                        subtitle: "Default",
+                        isCustom: false,
+                        displayID: nil
+                    )
+
+                    ForEach(Array(screens.enumerated()), id: \.offset) { idx, screen in
+                        let name = screen.localizedName
+                        let isMain = (screen.displayID == mainID) || (idx == 0)
+                        let isNotched = screen.safeAreaInsets.top > 0
+                        let res = "\(Int(screen.frame.width))×\(Int(screen.frame.height))"
+                        let tag = isMain ? "Main · \(res)" : "External · \(res)"
+                        displaySizeChip(
+                            key: name,
+                            symbol: isNotched ? "laptopcomputer" : "display",
+                            title: name,
+                            subtitle: tag,
+                            isCustom: settings.hasCustomSize(forDisplayKey: name),
+                            displayID: screen.displayID
+                        )
+                    }
+                }
+                .padding(.vertical, 1)
+            }
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+
+    private func displaySizeChip(
+        key: String,
+        symbol: String,
+        title: String,
+        subtitle: String,
+        isCustom: Bool,
+        displayID: CGDirectDisplayID?
+    ) -> some View {
+        let selected = selectedSizeDisplayKey == key
+        return Button {
+            selectedSizeDisplayKey = key
+            if liveSizePreview {
+                IslandState.shared?.setSizePreview(true, on: displayID)
+            }
+        } label: {
+            HStack(spacing: 7) {
+                Image(systemName: symbol)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(selected ? Color.white : Color.accentColor)
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 5) {
+                        Text(title)
+                            .font(.system(size: 11, weight: .semibold))
+                            .lineLimit(1)
+                        if isCustom {
+                            Text("Custom")
+                                .font(.system(size: 8.5, weight: .bold))
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(selected ? Color.white.opacity(0.24) : Color.accentColor.opacity(0.18), in: Capsule())
+                                .foregroundStyle(selected ? Color.white : Color.accentColor)
+                        }
+                    }
+                    Text(subtitle)
+                        .font(.system(size: 9.5))
+                        .foregroundStyle(selected ? Color.white.opacity(0.82) : Color.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .foregroundStyle(selected ? Color.white : Color.primary)
+            .background(
+                selected ? Color.accentColor : Color.primary.opacity(0.06),
+                in: RoundedRectangle(cornerRadius: 9, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 9, style: .continuous)
+                    .strokeBorder(selected ? Color.accentColor : Color.primary.opacity(0.10), lineWidth: 1)
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+
     private var islandSizePreviewRow: some View {
-        let w = settings.clampedIslandWidth
-        let h = settings.clampedIslandHeight
-        let cw = settings.clampedCompactWidthOffset
-        let ch = settings.clampedCompactHeightOffset
+        let profile = activeSizeProfile
+        let w = profile.clampedWidth
+        let h = profile.clampedHeight
+        let cw = profile.clampedCompactWidthOffset
+        let ch = profile.clampedCompactHeightOffset
+        let isSingleDisplay = selectedSizeDisplayKey != AppSettings.allDisplaysSizeKey
+        let isCustomized = settings.hasCustomSize(forDisplayKey: selectedSizeDisplayKey)
+        let targetScreen = selectedSizeScreen
+        let refW = max(1280, targetScreen?.frame.width ?? 1512)
+        let refH = max(800, targetScreen?.frame.height ?? 982)
+        let showsNotchStyle = targetScreen.map { $0.safeAreaInsets.top > 0 } ?? true
+
         let presets: [(String, Double, Double, Double, Double)] = [
             ("Compact", 380, 460, 0, 0),
             ("Default", 416, 620, 0, 0),
@@ -1217,12 +1381,12 @@ struct SettingsView: View {
             ("Large", 680, 780, 48, 4),
         ]
 
-        // Normalized miniature MacBook screen (112×70) showing proportional island width & height.
+        // Normalized miniature screen (112×70) scaled to the selected display's real resolution.
         let screenW: CGFloat = 112
         let screenH: CGFloat = 70
-        let boxW = max(24, min(screenW - 10, (w / 1440.0) * screenW * 1.45))
-        let boxH = max(18, min(screenH - 6, (h / 920.0) * screenH * 0.92))
-        let compactW = max(18, min(boxW - 4, 28 + (cw / 160.0) * 28))
+        let boxW = max(24, min(screenW - 10, (w / refW) * screenW * 1.45))
+        let boxH = max(18, min(screenH - 6, (h / refH) * screenH * 0.92))
+        let compactW = max(18, min(boxW - 4, (showsNotchStyle ? 28 : 34) + (cw / 160.0) * 28))
         let compactH = max(5, min(12, 5 + (ch / 24.0) * 6))
 
         return HStack(alignment: .center, spacing: 14) {
@@ -1241,11 +1405,11 @@ struct SettingsView: View {
                     .frame(width: boxW, height: boxH)
                     .offset(y: 1)
 
-                // Compact top bar indicator
-                RoundedRectangle(cornerRadius: 3, style: .continuous)
-                    .fill(Color.accentColor.opacity(0.70))
+                // Compact top bar indicator (notched vs external pill)
+                RoundedRectangle(cornerRadius: showsNotchStyle ? 3 : 4, style: .continuous)
+                    .fill(Color.accentColor.opacity(0.75))
                     .frame(width: compactW, height: compactH)
-                    .offset(y: 2)
+                    .offset(y: showsNotchStyle ? 1 : 3)
             }
             .frame(width: screenW, height: screenH)
             .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
@@ -1262,8 +1426,13 @@ struct SettingsView: View {
                     if cw != 0 || ch != 0 {
                         trustChip("Bar \(cw >= 0 ? "+" : "")\(Int(cw)) / +\(Int(ch))", tint: .cyan)
                     }
+                    if isSingleDisplay {
+                        trustChip(isCustomized ? "Custom" : "Default", tint: isCustomized ? .blue : .secondary)
+                    }
                 }
-                Text("Drag the sliders below or pick a preset — turn on Live Preview to watch your Dynamic Island resize in real time.")
+                Text(isSingleDisplay
+                     ? "Adjusting \(selectedSizeDisplayKey) independently. Turn on Live Preview to see it live on that screen."
+                     : "Default size for all displays without a custom override. Pick any display above to size it separately.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1272,10 +1441,10 @@ struct SettingsView: View {
                     ForEach(presets, id: \.0) { name, pw, ph, pcw, pch in
                         let selected = abs(w - pw) < 2 && abs(h - ph) < 5 && abs(cw - pcw) < 2 && abs(ch - pch) < 1
                         Button(name) {
-                            settings.islandWidth = pw
-                            settings.islandHeight = ph
-                            settings.islandCompactWidthOffset = pcw
-                            settings.islandCompactHeightOffset = pch
+                            settings.setSizeProfile(
+                                IslandSizeProfile(width: pw, height: ph, compactWidthOffset: pcw, compactHeightOffset: pch),
+                                forSelection: selectedSizeDisplayKey
+                            )
                         }
                         .font(.system(size: 10, weight: .semibold))
                         .padding(.horizontal, 8)
@@ -1292,19 +1461,35 @@ struct SettingsView: View {
             VStack(alignment: .trailing, spacing: 6) {
                 Button(liveSizePreview ? "Stop Preview" : "Live Preview") {
                     liveSizePreview.toggle()
-                    IslandState.shared?.setSizePreview(liveSizePreview)
+                    IslandState.shared?.setSizePreview(liveSizePreview, on: targetScreen?.displayID)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
-                .help("Keep the Dynamic Island Shade open while adjusting horizontal and vertical size")
+                .help(isSingleDisplay
+                      ? "Keep the Dynamic Island Shade open on \(selectedSizeDisplayKey) while resizing"
+                      : "Keep the Dynamic Island Shade open while adjusting horizontal and vertical size")
 
-                Button("Reset") {
-                    settings.islandWidth = Double(IslandLayout.defaultShadeWidth)
-                    settings.islandHeight = Double(IslandLayout.defaultShadeHeight)
-                    settings.islandCompactWidthOffset = 0
-                    settings.islandCompactHeightOffset = 0
+                HStack(spacing: 5) {
+                    if isSingleDisplay && isCustomized {
+                        Button("Use Default") {
+                            settings.clearCustomSize(forDisplayKey: selectedSizeDisplayKey)
+                        }
+                        .controlSize(.small)
+                        .help("Remove custom override so \(selectedSizeDisplayKey) inherits All Displays")
+                    } else {
+                        Button("Reset") {
+                            settings.setSizeProfile(.defaultProfile, forSelection: selectedSizeDisplayKey)
+                        }
+                        .controlSize(.small)
+                    }
+                    if isSingleDisplay {
+                        Button("Copy to All") {
+                            settings.applySizeToAllDisplays(profile)
+                        }
+                        .controlSize(.small)
+                        .help("Apply \(Int(w)) × \(Int(h)) pt to all displays")
+                    }
                 }
-                .controlSize(.small)
             }
         }
         .padding(.horizontal, 14)

@@ -25,11 +25,15 @@ struct ShadeContent: View {
     }
 
     var body: some View {
+        let activeDisplayID = state.activeDisplayID
+        let activeGeo = state.geometry(for: activeDisplayID)
+        let activeLayout = state.layout(for: activeDisplayID)
+        let activeSize = settings.sizeProfile(forDisplayID: activeDisplayID)
         VStack(spacing: 12) {
             grabber
             header
-            let scrollH = state.layout.shadeScrollHeight(state.geometry)
-            let isTallerThanDefault = settings.islandHeight > IslandLayout.defaultShadeHeight + 1
+            let scrollH = activeLayout.shadeScrollHeight(activeGeo)
+            let isTallerThanDefault = activeSize.clampedHeight > IslandLayout.defaultShadeHeight + 1
             ScrollView {
                 VStack(spacing: UI.stack) {
                     if settings.quickTogglesEnabled { QuickTogglesRow(state: state) }
@@ -97,19 +101,21 @@ struct ShadeContent: View {
         .gesture(
             DragGesture(minimumDistance: 1, coordinateSpace: .global)
                 .onChanged { value in
+                    let screen = state.geometry(for: state.activeDisplayID).screen
+                    let targetKey = NSScreen.screens.count > 1 ? screen.localizedName : AppSettings.allDisplaysSizeKey
                     if resizeStartSize == nil {
-                        resizeStartSize = CGSize(
-                            width: settings.clampedIslandWidth,
-                            height: settings.clampedIslandHeight
-                        )
+                        let current = settings.sizeProfile(forSelection: targetKey)
+                        resizeStartSize = CGSize(width: current.clampedWidth, height: current.clampedHeight)
                         state.isResizingIsland = true
                     }
                     guard let start = resizeStartSize else { return }
                     // Multiply horizontal delta by 2 because the island stays centered under the notch.
                     let nextW = min(max(start.width + value.translation.width * 2, 360), 760)
                     let nextH = min(max(start.height + value.translation.height, 320), 860)
-                    settings.islandWidth = Double((nextW / 2).rounded() * 2)
-                    settings.islandHeight = Double((nextH / 2).rounded() * 2)
+                    var updated = settings.sizeProfile(forSelection: targetKey)
+                    updated.width = Double((nextW / 2).rounded() * 2)
+                    updated.height = Double((nextH / 2).rounded() * 2)
+                    settings.setSizeProfile(updated, forSelection: targetKey)
                 }
                 .onEnded { _ in
                     resizeStartSize = nil

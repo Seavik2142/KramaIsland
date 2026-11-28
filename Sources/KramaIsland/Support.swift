@@ -5,6 +5,26 @@ import IOKit.pwr_mgt
 
 // MARK: - Settings
 
+/// Independent Dynamic Island dimensions (global default or customized per connected display).
+struct IslandSizeProfile: Codable, Equatable {
+    var width: Double
+    var height: Double
+    var compactWidthOffset: Double
+    var compactHeightOffset: Double
+
+    static let defaultProfile = IslandSizeProfile(
+        width: Double(IslandLayout.defaultShadeWidth),
+        height: Double(IslandLayout.defaultShadeHeight),
+        compactWidthOffset: 0,
+        compactHeightOffset: 0
+    )
+
+    var clampedWidth: CGFloat { CGFloat(min(max(width, 360), 760)) }
+    var clampedHeight: CGFloat { CGFloat(min(max(height, 320), 860)) }
+    var clampedCompactWidthOffset: CGFloat { CGFloat(min(max(compactWidthOffset, -10), 160)) }
+    var clampedCompactHeightOffset: CGFloat { CGFloat(min(max(compactHeightOffset, 0), 24)) }
+}
+
 /// A UserDefaults-backed property on an ObservableObject that publishes changes.
 @propertyWrapper
 struct Pref<Value> {
@@ -50,6 +70,7 @@ final class AppSettings: ObservableObject {
     @Pref("islandHeight", 620.0) var islandHeight: Double                  // vertical scroll height of shade (320...860)
     @Pref("islandCompactWidthOffset", 0.0) var islandCompactWidthOffset: Double   // extra compact/notch width (-10...160)
     @Pref("islandCompactHeightOffset", 0.0) var islandCompactHeightOffset: Double // extra compact/notch height (0...24)
+    @Pref("islandDisplaySizesJSON", "") var islandDisplaySizesJSON: String        // per-display size overrides keyed by display name
     @Pref("hotkeyKeyCode", 49) var hotkeyKeyCode: Int                       // Space
     @Pref("hotkeyModifiers", 524288) var hotkeyModifiers: Int                // ⌥ (NSEvent.ModifierFlags.option)
 
@@ -122,6 +143,89 @@ final class AppSettings: ObservableObject {
     var clampedIslandHeight: CGFloat { CGFloat(min(max(islandHeight, 320), 860)) }
     var clampedCompactWidthOffset: CGFloat { CGFloat(min(max(islandCompactWidthOffset, -10), 160)) }
     var clampedCompactHeightOffset: CGFloat { CGFloat(min(max(islandCompactHeightOffset, 0), 24)) }
+
+    static let allDisplaysSizeKey = "__all__"
+
+    var globalIslandSize: IslandSizeProfile {
+        get {
+            IslandSizeProfile(
+                width: islandWidth,
+                height: islandHeight,
+                compactWidthOffset: islandCompactWidthOffset,
+                compactHeightOffset: islandCompactHeightOffset
+            )
+        }
+        set {
+            islandWidth = newValue.width
+            islandHeight = newValue.height
+            islandCompactWidthOffset = newValue.compactWidthOffset
+            islandCompactHeightOffset = newValue.compactHeightOffset
+        }
+    }
+
+    var perDisplayIslandSizes: [String: IslandSizeProfile] {
+        get {
+            guard !islandDisplaySizesJSON.isEmpty,
+                  let data = islandDisplaySizesJSON.data(using: .utf8),
+                  let decoded = try? JSONDecoder().decode([String: IslandSizeProfile].self, from: data)
+            else { return [:] }
+            return decoded
+        }
+        set {
+            if newValue.isEmpty {
+                islandDisplaySizesJSON = ""
+            } else if let data = try? JSONEncoder().encode(newValue),
+                      let text = String(data: data, encoding: .utf8) {
+                islandDisplaySizesJSON = text
+            }
+        }
+    }
+
+    func hasCustomSize(forDisplayKey key: String) -> Bool {
+        key != Self.allDisplaysSizeKey && perDisplayIslandSizes[key] != nil
+    }
+
+    /// Effective Dynamic Island dimensions for a specific display (custom override if set, else global default).
+    func sizeProfile(for screen: NSScreen?) -> IslandSizeProfile {
+        guard let key = screen?.localizedName, !key.isEmpty,
+              let custom = perDisplayIslandSizes[key] else {
+            return globalIslandSize
+        }
+        return custom
+    }
+
+    func sizeProfile(forDisplayID id: CGDirectDisplayID) -> IslandSizeProfile {
+        let screen = NSScreen.screens.first { $0.displayID == id }
+        return sizeProfile(for: screen)
+    }
+
+    /// Profile for a Settings selection key (`"__all__"` = global default, or a display's `localizedName`).
+    func sizeProfile(forSelection key: String) -> IslandSizeProfile {
+        if key == Self.allDisplaysSizeKey { return globalIslandSize }
+        return perDisplayIslandSizes[key] ?? globalIslandSize
+    }
+
+    func setSizeProfile(_ profile: IslandSizeProfile, forSelection key: String) {
+        if key == Self.allDisplaysSizeKey {
+            globalIslandSize = profile
+        } else {
+            var map = perDisplayIslandSizes
+            map[key] = profile
+            perDisplayIslandSizes = map
+        }
+    }
+
+    func clearCustomSize(forDisplayKey key: String) {
+        guard key != Self.allDisplaysSizeKey else { return }
+        var map = perDisplayIslandSizes
+        guard map.removeValue(forKey: key) != nil else { return }
+        perDisplayIslandSizes = map
+    }
+
+    func applySizeToAllDisplays(_ profile: IslandSizeProfile) {
+        globalIslandSize = profile
+        perDisplayIslandSizes = [:]
+    }
 
     var mutedNotificationAppIDs: Set<String> {
         Set(mutedNotificationApps.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty })
