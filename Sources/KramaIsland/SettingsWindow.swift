@@ -764,9 +764,16 @@ struct SettingsView: View {
                 )
                 SettingDivider()
                 SettingToggleRow(
-                    symbol: "tray.full.fill", tint: .blue,
+                    symbol: "dot.radiowaves.left.and.right", tint: .blue,
+                    title: "AirDrop Drop Zone",
+                    subtitle: "Drag any file or image to the notch to AirDrop instantly with zero delay",
+                    isOn: $settings.airDropEnabled
+                )
+                SettingDivider()
+                SettingToggleRow(
+                    symbol: "tray.full.fill", tint: .indigo,
                     title: "File Shelf",
-                    subtitle: "Drag files onto the notch to park, drag out, or AirDrop",
+                    subtitle: "Park dragged files in the notch to drag out later or AirDrop together",
                     isOn: $settings.shelfEnabled
                 )
                 SettingDivider()
@@ -849,11 +856,26 @@ struct SettingsView: View {
 
             SettingSection("Auto-Hide & Displays") {
                 SettingToggleRow(
-                    symbol: "arrow.up.left.and.arrow.down.right", tint: .indigo,
-                    title: "Hide in full-screen apps",
-                    subtitle: "Automatically hide the island over full-screen windows",
+                    symbol: "play.rectangle.fill", tint: .indigo,
+                    title: "Hide in full-screen videos & apps",
+                    subtitle: "Automatically hides KramaIsland over full-screen videos (YouTube, Netflix, VLC, Safari, Chrome) and full-screen windows",
                     isOn: $settings.hideInFullscreen
                 )
+                if settings.hideInFullscreen {
+                    SettingDivider()
+                    SettingRow(
+                        symbol: "line.3.horizontal.decrease.circle.fill", tint: .purple,
+                        title: "Full-screen auto-hide scope",
+                        subtitle: "Choose whether to hide on every full-screen Space or only videos & browsers"
+                    ) {
+                        Picker("", selection: $settings.hideInFullscreenMode) {
+                            Text("All full-screen apps & videos").tag("all")
+                            Text("Videos & browsers only").tag("video")
+                        }
+                        .labelsHidden()
+                        .frame(width: 205)
+                    }
+                }
                 SettingDivider()
                 SettingRow(
                     symbol: "app.dashed", tint: .secondary,
@@ -866,28 +888,43 @@ struct SettingsView: View {
                 }
                 SettingDivider()
                 SettingRow(
-                    symbol: "display", tint: .blue,
+                    symbol: "display.2", tint: .blue,
                     title: "Show island on",
                     subtitle: displayStatusSummary
                 ) {
                     Picker("", selection: $settings.displayPreference) {
-                        Text("Automatic (Notch)").tag("auto")
-                        Text("Main Display").tag("main")
-                        ForEach(NSScreen.screens.map(\.localizedName), id: \.self) { name in
-                            Text(name).tag(name)
+                        Text("All Displays").tag("all")
+                        Text("Follow Cursor (Active Display)").tag("cursor")
+                        Divider()
+                        Text("Notch Display Only").tag("auto")
+                        Text("Main Display Only").tag("main")
+                        if !NSScreen.screens.isEmpty {
+                            Divider()
+                            ForEach(NSScreen.screens.map(\.localizedName), id: \.self) { name in
+                                Text(name).tag(name)
+                            }
                         }
                     }
                     .labelsHidden()
-                    .frame(width: 170)
+                    .frame(width: 205)
                 }
             }
         }
     }
 
     private var displayStatusSummary: String {
-        let g = NotchGeometry.current
-        let w = Int(g.screen.frame.width), h = Int(g.screen.frame.height)
-        return "\(g.screen.localizedName) (\(w)×\(h) · \(g.hasNotch ? "Notch" : "Standard"))"
+        let screens = NSScreen.screens
+        guard !screens.isEmpty else { return "No display detected" }
+        let targets = NotchGeometry.targetScreens
+        let summary = targets.map { s in
+            let w = Int(s.frame.width), h = Int(s.frame.height)
+            let kind = s.safeAreaInsets.top > 0 ? "Notch" : "External"
+            return "\(s.localizedName) (\(w)×\(h) · \(kind))"
+        }.joined(separator: " · ")
+        if settings.displayPreference == "all", screens.count > 1 {
+            return "Active on \(targets.count) displays: \(summary)"
+        }
+        return summary
     }
 
     // MARK: - Privacy & Permissions

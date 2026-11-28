@@ -77,6 +77,9 @@ final class MenuBarController: NSObject {
         let layoutItem = menu.addItem(withTitle: "Window Layout", action: nil, keyEquivalent: "")
         layoutItem.submenu = buildWindowMenu()
         menu.addItem(.separator())
+        menu.addItem(withTitle: "AirDrop Files…", action: #selector(airDropFiles), keyEquivalent: "").target = self
+        menu.addItem(withTitle: "Open AirDrop Window", action: #selector(openAirDrop), keyEquivalent: "").target = self
+        menu.addItem(.separator())
         menu.addItem(withTitle: "Quiet Mode", action: #selector(toggleQuiet), keyEquivalent: "").target = self
         menu.addItem(withTitle: "Quiet for 1 Hour", action: #selector(quietHour), keyEquivalent: "").target = self
         menu.addItem(.separator())
@@ -93,6 +96,8 @@ final class MenuBarController: NSObject {
 
     @objc private func shade() { openShade?() }
     @objc private func launcherAction() { openLauncher?() }
+    @objc private func airDropFiles() { AirDropManager.shared.pickAndSendFiles() }
+    @objc private func openAirDrop() { AirDropManager.shared.openAirDropWindow() }
     @objc private func settings() { openSettings?() }
     @objc private func toggleQuiet() { AppSettings.shared.setQuiet(!AppSettings.shared.quietManualOn) }
     @objc private func quietHour() { AppSettings.shared.setQuiet(true, for: 3600) }

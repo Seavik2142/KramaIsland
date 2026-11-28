@@ -7,12 +7,13 @@ import UniformTypeIdentifiers
 /// the launcher, so the notch and whatever drops down always read as a single thing.
 struct NotchView: View {
     @ObservedObject var state: IslandState
+    let displayID: CGDirectDisplayID
     @ObservedObject var settings = AppSettings.shared
     @ObservedObject var updater = Updater.shared
     @State private var now = Date()
     private let clock = Timer.publish(every: 30, on: .main, in: .common).autoconnect()
 
-    private var geo: NotchGeometry { state.geometry }
+    private var geo: NotchGeometry { state.geometry(for: displayID) }
 
     /// A window's worth of shadow: soft, mostly below the surface, a few points at the sides. None
     /// while the island is only the notch and its ears, which sit inside the menu bar.
@@ -32,7 +33,7 @@ struct NotchView: View {
 
     private var surface: some View {
         let g = geo
-        let layout = state.layout
+        let layout = state.layout(for: displayID)
 
         // The surface takes the height of the *current* state only, so it springs smoothly between
         // sizes while the outgoing state fades out on top of the incoming one (clipped by the shape)
@@ -53,6 +54,11 @@ struct NotchView: View {
                                        startPoint: .top, endPoint: .bottom),
                         lineWidth: 0.75
                     )
+                    .allowsHitTesting(false)
+            } else if !g.hasNotch {
+                // Crisp subtle glass edge on external / non-notch displays so the resting pill reads cleanly.
+                IslandSurfaceBorderShape(radius: layout.cornerRadius, shoulder: layout.shoulderRadius)
+                    .stroke(Color.white.opacity(0.11), lineWidth: 0.6)
                     .allowsHitTesting(false)
             }
         }
@@ -83,15 +89,24 @@ struct NotchView: View {
                 } else {
                     state.activities.dismissByUser()
                 }
-            case .collapsed, .compact, .expanded: state.toggleShade()
+            case .collapsed, .compact, .expanded: state.toggleShade(on: displayID)
             case .shade, .launcher: break   // inner controls handle taps
             }
         }
-        .onDrop(of: [UTType.fileURL], isTargeted: $state.isDragTargeted) { providers in
-            guard settings.shelfEnabled else { return false }
-            ShelfStore.urls(from: providers) { urls in
-                state.shelf.add(urls)
-                if !urls.isEmpty { state.openShade() }
+        .onDrop(of: ShelfStore.acceptedDropTypes, isTargeted: Binding(
+            get: { state.isDragTargeted && state.activeDisplayID == displayID },
+            set: { state.setDragTargeted($0, on: displayID) }
+        )) { providers in
+            guard settings.airDropEnabled || settings.shelfEnabled else { return false }
+            ShelfStore.resolveDroppedURLs(from: providers) { urls, temps in
+                state.setDragTargeted(false, on: displayID)
+                guard !urls.isEmpty else { return }
+                if settings.airDropEnabled && !settings.shelfEnabled {
+                    AirDropManager.shared.send(urls, temporaryURLs: temps)
+                } else {
+                    state.shelf.add(urls)
+                    state.openShade(on: displayID)
+                }
             }
             return true
         }
@@ -99,9 +114,7 @@ struct NotchView: View {
     }
 
     private func reportSurfaceSize(_ size: CGSize) {
-        guard size != state.renderedSurfaceSize else { return }
-        state.renderedSurfaceSize = size
-        state.onSurfaceSizeChanged?()
+        state.setRenderedSurfaceSize(size, for: displayID)
     }
 
     private func notchClearance(_ g: NotchGeometry) -> some View {
@@ -189,8 +202,8 @@ struct NotchView: View {
 
     private var expandedContent: some View {
         VStack(spacing: UI.stack) {
-            if state.isDragTargeted {
-                dropHint
+            if state.isDragTargeted && (settings.airDropEnabled || settings.shelfEnabled) {
+                IslandDropZonesView(state: state, displayID: displayID)
             } else {
                 statusRow
                 if state.volumeHUDVisible {
@@ -221,22 +234,6 @@ struct NotchView: View {
         .padding(.bottom, 14)
     }
 
-    private var dropHint: some View {
-        HStack(spacing: 12) {
-            IconBadge(symbol: "tray.and.arrow.down.fill", tint: UI.info, size: 40)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Drop to add to the Shelf").font(UI.title())
-                Text("Park files here, drag them out or AirDrop them later")
-                    .font(UI.body(10.5)).foregroundStyle(UI.secondaryText)
-            }
-            Spacer()
-        }
-        .padding(.vertical, 10)
-        .islandCard()
-        .overlay(RoundedRectangle(cornerRadius: UI.cardRadius, style: .continuous)
-            .strokeBorder(UI.info.opacity(0.6), style: StrokeStyle(lineWidth: 1.5, dash: [6, 5])))
-    }
-
     /// Clock and date on the left; status chips, battery capsule and notification bell on the right.
     private var statusRow: some View {
         HStack(spacing: 8) {
@@ -262,7 +259,7 @@ struct NotchView: View {
 
     private var notificationsButton: some View {
         let count = state.unreadCount
-        return IconButton(symbol: "bell.fill", size: 28, help: "Open Shade") { state.toggleShade() }
+        return IconButton(symbol: "bell.fill", size: 28, help: "Open Shade") { state.toggleShade(on: displayID) }
             .overlay(alignment: .topTrailing) {
                 if count > 0 {
                     Text(count > 99 ? "99+" : "\(count)")

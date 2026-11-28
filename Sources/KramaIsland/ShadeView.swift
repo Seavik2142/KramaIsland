@@ -52,7 +52,9 @@ struct ShadeContent: View {
                     } else if settings.volumeHUDEnabled {
                         ShadeVolumeCard(volume: state.volume)
                     }
-                    if settings.shelfEnabled, !shelf.items.isEmpty { ShelfStrip(shelf: shelf) }
+                    if settings.airDropEnabled || settings.shelfEnabled {
+                        ShelfStrip(shelf: shelf) { state.closeShade() }
+                    }
                     if settings.clipboardEnabled { clipboardSection }
                     if state.hasNotifications {
                         NotificationHubSection(state: state)

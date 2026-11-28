@@ -3,7 +3,7 @@ import SwiftUI
 import KramaIslandInfoPlist
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private var panel: NotchPanel!
+    private var panels: NotchPanelManager!
     private let state = IslandState()
     private let hotkey = HotkeyManager()
     private let menuBar = MenuBarController()
@@ -11,14 +11,43 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var globalMonitor: Any?
     private var localMonitor: Any?
     private var accessibilityPoll: Timer?
+    private var lastSettingsSnapshot: SettingsSnapshot?
+
+    private struct SettingsSnapshot: Equatable {
+        let showMenuBarIcon: Bool
+        let displayPreference: String
+        let islandWidth: Double
+        let islandHeight: Double
+        let hideInFullscreen: Bool
+        let hideInFullscreenMode: String
+        let hiddenApps: String
+        let volumeHUDEnabled: Bool
+        let replaceSystemVolumeHUD: Bool
+
+        static var current: SettingsSnapshot {
+            let s = AppSettings.shared
+            return SettingsSnapshot(
+                showMenuBarIcon: s.showMenuBarIcon,
+                displayPreference: s.displayPreference,
+                islandWidth: s.islandWidth,
+                islandHeight: s.islandHeight,
+                hideInFullscreen: s.hideInFullscreen,
+                hideInFullscreenMode: s.hideInFullscreenMode,
+                hiddenApps: s.hiddenApps,
+                volumeHUDEnabled: s.volumeHUDEnabled,
+                replaceSystemVolumeHUD: s.replaceSystemVolumeHUD
+            )
+        }
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         _ = KramaIslandInfoPlistMarker()   // keeps the embedded Info.plist linked in
         NSApp.applicationIconImage = BrandIcon.image
 
-        panel = NotchPanel(state: state)
-        panel.show()
+        panels = NotchPanelManager(state: state)
+        panels.show()
         state.start()
+        AirDropManager.shared.warmUp()   // pre-warms AirDrop XPC off the critical path so first drop is instant
         Updater.shared.startSchedule()   // launch + daily check against GitHub Releases (Settings ▸ Updates)
 
         // Menu bar icon
@@ -47,26 +76,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         Permissions.calendarRequest = { [weak self] in self?.state.calendar.requestAccess() }
 
-        // Hide over full-screen / listed apps.
-        visibility.onChange = { [weak self] visible in
-            self?.panel.setHiddenByPolicy(!visible)
-            VolumeController.shared.isIslandHiddenByPolicy = !visible
+        // Hide per-display over full-screen videos / full-screen apps / listed apps.
+        visibility.onHiddenDisplaysChange = { [weak self] hiddenIDs in
+            self?.panels.setHiddenDisplays(hiddenIDs)
         }
         visibility.start()
 
-        // Settings that take effect live.
+        // Settings that take effect live — diffed so unrelated macOS AppKit / NSOpenPanel / AirDrop
+        // UserDefaults writes never trigger unnecessary display syncs or fullscreen checks.
+        lastSettingsSnapshot = .current
         NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { [weak self] _ in
             guard let self else { return }
-            self.menuBar.setVisible(AppSettings.shared.showMenuBarIcon)
-            self.panel.reposition()
-            self.visibility.evaluate()
-            VolumeController.shared.syncEventTap()
+            let prev = self.lastSettingsSnapshot
+            let curr = SettingsSnapshot.current
+            guard prev != curr else { return }
+            self.lastSettingsSnapshot = curr
+
+            if prev?.showMenuBarIcon != curr.showMenuBarIcon {
+                self.menuBar.setVisible(curr.showMenuBarIcon)
+            }
+            if prev?.displayPreference != curr.displayPreference
+                || prev?.islandWidth != curr.islandWidth
+                || prev?.islandHeight != curr.islandHeight {
+                self.panels.syncDisplays()
+            }
+            if prev?.hideInFullscreen != curr.hideInFullscreen
+                || prev?.hideInFullscreenMode != curr.hideInFullscreenMode
+                || prev?.hiddenApps != curr.hiddenApps
+                || prev?.displayPreference != curr.displayPreference {
+                self.visibility.evaluate()
+            }
+            if prev?.volumeHUDEnabled != curr.volumeHUDEnabled
+                || prev?.replaceSystemVolumeHUD != curr.replaceSystemVolumeHUD {
+                VolumeController.shared.syncEventTap()
+            }
         }
 
         NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification,
             object: nil, queue: .main
-        ) { [weak self] _ in self?.panel.reposition() }
+        ) { [weak self] _ in
+            self?.panels.syncDisplays()
+            self?.visibility.evaluate()
+        }
 
         // KRAMAISLAND_PREVIEW=expanded|shade|launcher|banner|activity|settings opens the island (or the
         // Settings window, on the KRAMAISLAND_SETTINGS_TAB tab) for screenshots and layout work.

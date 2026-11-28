@@ -1,4 +1,5 @@
 import AppKit
+import ApplicationServices
 import AVFoundation
 import Combine
 import CoreAudio
@@ -277,32 +278,49 @@ final class DownloadsWatcher {
     var onEvent: ((LiveActivity) -> Void)?
     private var source: DispatchSourceFileSystemObject?
     private var timer: Timer?
+    private var debounceWork: DispatchWorkItem?
     private var active: Set<String> = []
+    private let queue = DispatchQueue(label: "KramaIsland.downloads", qos: .utility)
     private let directory = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first!
     private static let partialExtensions: Set<String> = ["crdownload", "download", "part", "partial"]
 
     func start() {
         let fd = Darwin.open(directory.path, O_EVTONLY)
         if fd >= 0 {
-            let src = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write], queue: .main)
-            src.setEventHandler { [weak self] in self?.scan() }
+            let src = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write], queue: queue)
+            src.setEventHandler { [weak self] in self?.scheduleScan() }
             src.setCancelHandler { Darwin.close(fd) }
             src.resume()
             source = src
         }
-        timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-            guard let self, !self.active.isEmpty else { return }
-            self.scan()
+        let t = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+            self?.queue.async { [weak self] in
+                guard let self, !self.active.isEmpty else { return }
+                self.scanOffMain()
+            }
         }
-        scan()
+        t.tolerance = 0.4
+        timer = t
+        queue.async { [weak self] in self?.scanOffMain() }
     }
 
     func stop() {
         source?.cancel(); source = nil
         timer?.invalidate(); timer = nil
+        queue.async { [weak self] in
+            self?.debounceWork?.cancel()
+            self?.debounceWork = nil
+        }
     }
 
-    private func scan() {
+    private func scheduleScan() {
+        debounceWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in self?.scanOffMain() }
+        debounceWork = work
+        queue.asyncAfter(deadline: .now() + 0.35, execute: work)
+    }
+
+    private func scanOffMain() {
         guard let items = try? FileManager.default.contentsOfDirectory(
             at: directory, includingPropertiesForKeys: [.fileSizeKey, .isDirectoryKey, .contentModificationDateKey],
             options: [.skipsHiddenFiles])
@@ -314,6 +332,7 @@ final class DownloadsWatcher {
             Date().timeIntervalSince(Self.lastModified($0)) < 120
         }
 
+        var updates: [LiveActivity] = []
         for url in partials {
             let key = url.path
             let name = url.deletingPathExtension().lastPathComponent
@@ -331,22 +350,33 @@ final class DownloadsWatcher {
                 if size > 0 { subtitle = "Downloading… \(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))" }
             }
             active.insert(key)
-            onEvent?(LiveActivity(id: "dl.\(key)", kind: .download, symbol: "arrow.down.circle",
-                                  title: name, subtitle: subtitle, progress: progress, tint: UI.info, duration: 0))
+            updates.append(LiveActivity(id: "dl.\(key)", kind: .download, symbol: "arrow.down.circle",
+                                        title: name, subtitle: subtitle, progress: progress, tint: UI.info, duration: 0))
         }
 
         let stillThere = Set(partials.map(\.path))
+        var completed: [(key: String, base: String, finishedPath: String?)] = []
         for key in active.subtracting(stillThere) {
             active.remove(key)
             let base = URL(fileURLWithPath: key).deletingPathExtension().lastPathComponent
-            ActivityCenter.shared.dismiss(id: "dl.\(key)")
-            // Announce completion only when the finished file actually appeared (a partial that
-            // merely went stale or was cancelled just disappears quietly).
-            guard let finished = items.first(where: { $0.lastPathComponent == base }) else { continue }
-            onEvent?(LiveActivity(id: "dl.done.\(key)", kind: .download, symbol: "checkmark.circle.fill",
-                                  title: base, subtitle: "Download complete", progress: nil, tint: UI.success,
-                                  image: NSWorkspace.shared.icon(forFile: finished.path), duration: 4))
-            Feedback.tap()
+            let finished = items.first(where: { $0.lastPathComponent == base })?.path
+            completed.append((key, base, finished))
+        }
+
+        guard !updates.isEmpty || !completed.isEmpty else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            for act in updates { self.onEvent?(act) }
+            for done in completed {
+                ActivityCenter.shared.dismiss(id: "dl.\(done.key)")
+                guard let path = done.finishedPath else { continue }
+                self.onEvent?(LiveActivity(
+                    id: "dl.done.\(done.key)", kind: .download, symbol: "checkmark.circle.fill",
+                    title: done.base, subtitle: "Download complete", progress: nil, tint: UI.success,
+                    image: AppIconCache.fileIcon(for: path), duration: 4
+                ))
+                Feedback.tap()
+            }
         }
     }
 
@@ -600,49 +630,311 @@ final class CustomActivityWatcher {
     }
 }
 
-// MARK: - Visibility (hide over full-screen apps / specific apps)
+// MARK: - Visibility (hide over full-screen videos / full-screen apps / specific apps)
 
 final class VisibilityMonitor {
-    var onChange: ((Bool) -> Void)?
+    /// Reports the exact set of display IDs where KramaIsland should currently be hidden
+    /// (e.g. a full-screen video on Monitor 1 hides Monitor 1 while keeping Monitor 2 visible!).
+    var onHiddenDisplaysChange: ((Set<CGDirectDisplayID>) -> Void)?
     private var timer: Timer?
-    private var last: Bool?
-    private var observer: Any?
+    private var lastHidden: Set<CGDirectDisplayID>?
+    private var observers: [Any] = []
+    private let evalQueue = DispatchQueue(label: "KramaIsland.visibility", qos: .utility)
+    private var isEvaluating = false
+    private var needsReevaluate = false
+
+    private struct ScreenSnapshot {
+        let displayID: CGDirectDisplayID
+        let axScreen: CGRect
+        let notchHeight: CGFloat
+        let desktopReservesMenuBar: Bool
+    }
+
+    private struct EvalInput {
+        let screens: [ScreenSnapshot]
+        let frontPID: pid_t?
+        let frontBundleID: String?
+        let frontIsSelf: Bool
+        let hideInFullscreen: Bool
+        let hideInFullscreenMode: String
+        let hiddenAppIDs: Set<String>
+        let activeMediaBundleID: String?
+    }
+
+    /// Bundle ID prefixes / fragments treated as video & media players for "Videos & browsers only" mode.
+    private static let videoAppHints: [String] = [
+        "com.google.chrome", "com.apple.safari", "com.brave.browser", "com.microsoft.edgemac",
+        "company.thebrowser", "com.vivaldi", "com.operasoftware", "org.mozilla.firefox",
+        "org.chromium", "com.kagi.kagimacos", "ai.perplexity.comet", "com.apple.webkit",
+        "org.videolan.vlc", "com.colliderli.iina", "com.apple.quicktimeplayerx", "com.apple.tv",
+        "io.mpv", "com.firecore.infuse", "tv.plex", "com.eltima.elmedia", "com.movist",
+        "com.apple.iwork.keynote", "com.microsoft.powerpoint", "us.zoom.xos", "com.apple.facetime",
+        "com.hnc.discord", "ru.keepcoder.telegram", "net.whatsapp", "com.netflix", "com.disney",
+    ]
 
     func start() {
-        observer = NSWorkspace.shared.notificationCenter.addObserver(
+        let ws = NSWorkspace.shared.notificationCenter
+        observers.append(ws.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main
-        ) { [weak self] _ in self?.evaluate() }
-        timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in self?.evaluate() }
+        ) { [weak self] _ in self?.evaluate() })
+        observers.append(ws.addObserver(
+            forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            // Re-check immediately and again after the macOS fullscreen Space animation settles.
+            self?.evaluate()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { self?.evaluate() }
+        })
+        observers.append(NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main
+        ) { [weak self] _ in self?.evaluate() })
+
+        // Gentle 1.2s background fallback poll (instant transitions are driven by Space & App events).
+        let t = Timer.scheduledTimer(withTimeInterval: 1.2, repeats: true) { [weak self] _ in self?.evaluate() }
+        t.tolerance = 0.25
+        timer = t
         evaluate()
     }
 
-    func evaluate() {
-        let settings = AppSettings.shared
-        var visible = true
-        if let app = NSWorkspace.shared.frontmostApplication, app != NSRunningApplication.current {
-            if let bundleID = app.bundleIdentifier, settings.hiddenAppIDs.contains(bundleID) {
-                visible = false
-            } else if settings.hideInFullscreen, Self.isFullscreen(pid: app.processIdentifier) {
-                visible = false
-            }
-        }
-        if visible != last {
-            last = visible
-            onChange?(visible)
+    deinit {
+        timer?.invalidate()
+        let ws = NSWorkspace.shared.notificationCenter
+        for obs in observers {
+            ws.removeObserver(obs)
+            NotificationCenter.default.removeObserver(obs)
         }
     }
 
-    /// True when the app owns a normal-layer window covering the notched screen.
-    static func isFullscreen(pid: pid_t) -> Bool {
-        let screen = NotchGeometry.current.screen.frame
-        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements],
-                                                    kCGNullWindowID) as? [[String: Any]] else { return false }
-        for window in list {
-            guard (window[kCGWindowOwnerPID as String] as? pid_t) == pid,
-                  (window[kCGWindowLayer as String] as? Int) == 0,
-                  let bounds = window[kCGWindowBounds as String] as? NSDictionary,
+    func evaluate() {
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { [weak self] in self?.evaluate() }
+            return
+        }
+        if isEvaluating {
+            needsReevaluate = true
+            return
+        }
+
+        let settings = AppSettings.shared
+        let screens = NotchGeometry.targetScreens
+        let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
+        let snapshots: [ScreenSnapshot] = screens.map { screen in
+            let geo = NotchGeometry(screen: screen)
+            let sf = screen.frame
+            let ph = primaryHeight > 0 ? primaryHeight : sf.height
+            let axScreen = CGRect(x: sf.minX, y: ph - sf.maxY, width: sf.width, height: sf.height)
+            return ScreenSnapshot(
+                displayID: screen.displayID,
+                axScreen: axScreen,
+                notchHeight: geo.hasNotch ? geo.notchHeight : 0,
+                desktopReservesMenuBar: screen.visibleFrame.maxY < sf.maxY - 2
+            )
+        }
+        let front = NSWorkspace.shared.frontmostApplication
+        let activeMediaBundle = (IslandState.shared?.media?.isPlaying == true)
+            ? IslandState.shared?.media?.player.bundleID.lowercased()
+            : nil
+        let input = EvalInput(
+            screens: snapshots,
+            frontPID: front?.processIdentifier,
+            frontBundleID: front?.bundleIdentifier,
+            frontIsSelf: front == NSRunningApplication.current,
+            hideInFullscreen: settings.hideInFullscreen,
+            hideInFullscreenMode: settings.hideInFullscreenMode,
+            hiddenAppIDs: settings.hiddenAppIDs,
+            activeMediaBundleID: activeMediaBundle
+        )
+
+        isEvaluating = true
+        evalQueue.async { [weak self] in
+            let hidden = Self.computeHiddenDisplays(input: input)
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.isEvaluating = false
+                if hidden != self.lastHidden {
+                    self.lastHidden = hidden
+                    self.onHiddenDisplaysChange?(hidden)
+                }
+                if self.needsReevaluate {
+                    self.needsReevaluate = false
+                    self.evaluate()
+                }
+            }
+        }
+    }
+
+    private static func computeHiddenDisplays(input: EvalInput) -> Set<CGDirectDisplayID> {
+        var hidden = Set<CGDirectDisplayID>()
+        let frontIsHiddenByList = !input.frontIsSelf
+            && (input.frontBundleID.map { input.hiddenAppIDs.contains($0) } ?? false)
+
+        if frontIsHiddenByList {
+            for screen in input.screens { hidden.insert(screen.displayID) }
+            return hidden
+        }
+        guard input.hideInFullscreen else { return hidden }
+
+        let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] ?? []
+        for screen in input.screens {
+            if let fsApp = fullscreenApp(on: screen, windowList: list, frontPID: input.frontIsSelf ? nil : input.frontPID) {
+                if input.hideInFullscreenMode == "video" {
+                    if isVideoOrMediaApp(fsApp, activeMediaBundleID: input.activeMediaBundleID) {
+                        hidden.insert(screen.displayID)
+                    }
+                } else {
+                    hidden.insert(screen.displayID)
+                }
+            }
+        }
+        return hidden
+    }
+
+    private static func isVideoOrMediaApp(_ app: NSRunningApplication, activeMediaBundleID: String?) -> Bool {
+        let bid = (app.bundleIdentifier ?? "").lowercased()
+        let name = (app.localizedName ?? "").lowercased()
+        if videoAppHints.contains(where: { bid.contains($0) }) { return true }
+        if name.contains("video") || name.contains("player") || name.contains("youtube")
+            || name.contains("netflix") || name.contains("tv") || name.contains("movie") {
+            return true
+        }
+        if let activeMediaBundleID, activeMediaBundleID == bid {
+            return true
+        }
+        return false
+    }
+
+    /// Detects whether ANY full-screen video or full-screen app is currently occupying `screen`.
+    /// Runs strictly off the main thread and avoids cross-process AX IPC unless a full-size candidate
+    /// window or missing Menu Bar actually exists on this display (zero system overhead at idle).
+    private static func fullscreenApp(
+        on screen: ScreenSnapshot,
+        windowList list: [[String: Any]],
+        frontPID: pid_t?
+    ) -> NSRunningApplication? {
+        let axScreen = screen.axScreen
+        let notchH = screen.notchHeight
+        let selfPID = ProcessInfo.processInfo.processIdentifier
+
+        // Check whether the macOS Menubar window (layer 24) is currently drawn on this display.
+        var hasVisibleMenuBar = false
+        for w in list {
+            let layer = (w[kCGWindowLayer as String] as? Int) ?? 0
+            guard layer == 24 || layer == 25 else { continue }
+            let owner = (w[kCGWindowOwnerName as String] as? String) ?? ""
+            let name = (w[kCGWindowName as String] as? String) ?? ""
+            guard owner == "Window Server" || name == "Menubar" else { continue }
+            guard let bounds = w[kCGWindowBounds as String] as? NSDictionary,
                   let rect = CGRect(dictionaryRepresentation: bounds) else { continue }
-            if abs(rect.width - screen.width) < 2, abs(rect.height - screen.height) < 2 { return true }
+            if abs(rect.minX - axScreen.minX) < 12,
+               abs(rect.minY - axScreen.minY) < 12,
+               rect.width >= axScreen.width * 0.85 {
+                hasVisibleMenuBar = true
+                break
+            }
+        }
+
+        // Collect candidate large on-screen windows occupying this display.
+        var candidatePIDs: [pid_t] = []
+        var seenPIDs = Set<pid_t>()
+
+        for w in list {
+            guard let pid = w[kCGWindowOwnerPID as String] as? pid_t, pid != selfPID else { continue }
+            let layer = (w[kCGWindowLayer as String] as? Int) ?? -1
+            guard layer >= 0, layer < 25 else { continue }
+
+            let ownerName = (w[kCGWindowOwnerName as String] as? String) ?? ""
+            if ownerName == "Window Server" || ownerName == "WindowManager" || ownerName == "Dock"
+                || ownerName == "Control Center" || ownerName == "Notification Center"
+                || ownerName == "Wallpaper" {
+                continue
+            }
+
+            guard let bounds = w[kCGWindowBounds as String] as? NSDictionary,
+                  let rect = CGRect(dictionaryRepresentation: bounds) else { continue }
+
+            let center = CGPoint(x: rect.midX, y: rect.midY)
+            guard axScreen.contains(center),
+                  rect.width >= axScreen.width - 10 else { continue }
+
+            // Case 1: True edge-to-edge full-screen cover (including the menu bar strip at y = axScreen.minY).
+            if rect.minY <= axScreen.minY + 4, rect.height >= axScreen.height - 6 {
+                if let app = NSRunningApplication(processIdentifier: pid) {
+                    return app
+                }
+            }
+
+            // Case 2: Notched full-screen window (starts right below the notch bezel and extends to
+            // the bottom of the display, e.g. 1512 × 950 at y = 32 on a 14" MacBook Pro).
+            if rect.height >= axScreen.height - notchH - 12,
+               rect.maxY >= axScreen.maxY - 6 {
+                if seenPIDs.insert(pid).inserted {
+                    candidatePIDs.append(pid)
+                }
+            }
+        }
+
+        // Fast zero-IPC exit: when Menu Bar is visible AND no full-size candidate exists, no AX IPC needed!
+        guard !candidatePIDs.isEmpty || !hasVisibleMenuBar else { return nil }
+
+        let axTrusted = AXIsProcessTrusted()
+        for pid in candidatePIDs {
+            guard let app = NSRunningApplication(processIdentifier: pid) else { continue }
+            if axTrusted, hasAXFullscreenWindow(pid: pid, on: axScreen) {
+                return app
+            }
+            if !hasVisibleMenuBar && (screen.desktopReservesMenuBar || !axTrusted) {
+                return app
+            }
+        }
+
+        // Only check the frontmost external app via AXFullScreen when the Menu Bar is hidden on this display.
+        if !hasVisibleMenuBar, axTrusted, let frontPID, !seenPIDs.contains(frontPID),
+           let front = NSRunningApplication(processIdentifier: frontPID),
+           hasAXFullscreenWindow(pid: frontPID, on: axScreen) {
+            return front
+        }
+
+        return nil
+    }
+
+    /// True when `pid` owns an `AXFullScreen == true` window positioned on `axScreen`.
+    private static func hasAXFullscreenWindow(pid: pid_t, on axScreen: CGRect) -> Bool {
+        let appEl = AXUIElementCreateApplication(pid)
+        var windowsToCheck: [AXUIElement] = []
+
+        var focusedRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(appEl, kAXFocusedWindowAttribute as CFString, &focusedRef) == .success,
+           let focusedRef, CFGetTypeID(focusedRef) == AXUIElementGetTypeID() {
+            windowsToCheck.append(focusedRef as! AXUIElement)
+        }
+        var listRef: CFTypeRef?
+        if AXUIElementCopyAttributeValue(appEl, kAXWindowsAttribute as CFString, &listRef) == .success,
+           let list = listRef as? [AXUIElement] {
+            for w in list.prefix(4) { windowsToCheck.append(w) }
+        }
+
+        for win in windowsToCheck {
+            var fsRef: CFTypeRef?
+            guard AXUIElementCopyAttributeValue(win, "AXFullScreen" as CFString, &fsRef) == .success,
+                  let isFS = fsRef as? Bool, isFS else { continue }
+
+            // Confirm this fullscreen window is actually on KramaIsland's display (multi-monitor safe).
+            var posRef: CFTypeRef?
+            var sizeRef: CFTypeRef?
+            if AXUIElementCopyAttributeValue(win, kAXPositionAttribute as CFString, &posRef) == .success,
+               AXUIElementCopyAttributeValue(win, kAXSizeAttribute as CFString, &sizeRef) == .success,
+               let posRef, let sizeRef,
+               CFGetTypeID(posRef) == AXValueGetTypeID(),
+               CFGetTypeID(sizeRef) == AXValueGetTypeID() {
+                var pt = CGPoint.zero
+                var sz = CGSize.zero
+                if AXValueGetValue(posRef as! AXValue, .cgPoint, &pt),
+                   AXValueGetValue(sizeRef as! AXValue, .cgSize, &sz) {
+                    let center = CGPoint(x: pt.x + sz.width / 2, y: pt.y + sz.height / 2)
+                    if axScreen.contains(center) { return true }
+                    continue
+                }
+            }
+            return true
         }
         return false
     }

@@ -56,13 +56,83 @@ final class IslandState: ObservableObject {
     /// True while directly dragging the Shade's corner resize handle.
     var isResizingIsland = false
 
-    /// Derived shape of the island; the view and the panel both read this.
+    /// Derived shape of the active island; panels query `layout(for:)` for per-display shapes.
     @Published private(set) var layout = IslandLayout()
-    /// Cached physical notch geometry; updated when screens change (avoids querying NSScreen in body).
-    @Published var geometry: NotchGeometry = .current
-    /// Live rendered size of the black island surface (non-Published so hit-test updates never re-render).
-    var renderedSurfaceSize: CGSize = .zero
-    var onSurfaceSizeChanged: (() -> Void)?
+    /// Which display currently owns interactive/expanded states (hover, shade, launcher, drag).
+    @Published var activeDisplayID: CGDirectDisplayID = NotchGeometry.activeCursorScreen.displayID {
+        didSet { if activeDisplayID != oldValue { refreshLayout() } }
+    }
+    /// Display IDs currently hosting a Dynamic Island panel.
+    @Published var managedDisplayIDs: [CGDirectDisplayID] = []
+    /// Display IDs currently hidden by full-screen video / app visibility policy.
+    @Published var hiddenDisplayIDs: Set<CGDirectDisplayID> = [] { didSet { refreshLayout() } }
+    /// Cached physical notch / bezel geometry per display.
+    @Published var geometries: [CGDirectDisplayID: NotchGeometry] = [:]
+    /// Geometry of the currently active display (used by ShadeView / LauncherView height budgets).
+    var geometry: NotchGeometry {
+        geometries[activeDisplayID] ?? .current
+    }
+    /// Live rendered size of each display's black island surface (non-Published so hit-test updates never re-render).
+    var renderedSurfaceSizes: [CGDirectDisplayID: CGSize] = [:]
+    var onSurfaceSizeChanged: ((CGDirectDisplayID) -> Void)?
+
+    func geometry(for displayID: CGDirectDisplayID) -> NotchGeometry {
+        if let cached = geometries[displayID] { return cached }
+        if let screen = NSScreen.screens.first(where: { $0.displayID == displayID }) {
+            return NotchGeometry(screen: screen)
+        }
+        return .current
+    }
+
+    func renderedSurfaceSize(for displayID: CGDirectDisplayID) -> CGSize {
+        renderedSurfaceSizes[displayID] ?? .zero
+    }
+
+    func setRenderedSurfaceSize(_ size: CGSize, for displayID: CGDirectDisplayID) {
+        guard renderedSurfaceSizes[displayID] != size else { return }
+        renderedSurfaceSizes[displayID] = size
+        onSurfaceSizeChanged?(displayID)
+    }
+
+    /// Preferred display for transient HUDs & banners (Volume HUD, Notifications, Live Activities):
+    /// picks the display under the cursor if visible, else activeDisplayID if visible, else any visible display.
+    private var preferredAlertDisplayID: CGDirectDisplayID {
+        let managed = managedDisplayIDs.isEmpty ? [activeDisplayID] : managedDisplayIDs
+        let cursorID = NotchGeometry.activeCursorScreen.displayID
+        if managed.contains(cursorID), !hiddenDisplayIDs.contains(cursorID) {
+            return cursorID
+        }
+        if managed.contains(activeDisplayID), !hiddenDisplayIDs.contains(activeDisplayID) {
+            return activeDisplayID
+        }
+        return managed.first { !hiddenDisplayIDs.contains($0) } ?? activeDisplayID
+    }
+
+    /// Computes the exact `IslandLayout` for a given display so hovering or opening Shade/Launcher
+    /// on Display 2 expands ONLY Display 2 while other displays remain cleanly compact/collapsed.
+    func layout(for displayID: CGDirectDisplayID) -> IslandLayout {
+        var l = layout
+        let ears = l.compactEars
+        let isInteractiveOwner = (displayID == activeDisplayID)
+        let isAlertOwner = (displayID == preferredAlertDisplayID)
+
+        if isLauncherOpen {
+            l.mode = isInteractiveOwner ? .launcher : (ears ? .compact : .collapsed)
+        } else if isShadeOpen {
+            l.mode = isInteractiveOwner ? .shade : (ears ? .compact : .collapsed)
+        } else if banner != nil {
+            l.mode = isAlertOwner ? .banner : (ears ? .compact : .collapsed)
+        } else if isExpanded || isDragTargeted {
+            l.mode = isInteractiveOwner ? .expanded : (ears ? .compact : .collapsed)
+        } else if volumeHUDVisible {
+            l.mode = isAlertOwner ? .volume : (ears ? .compact : .collapsed)
+        } else if activity != nil {
+            l.mode = isAlertOwner ? .activity : (ears ? .compact : .collapsed)
+        } else {
+            l.mode = ears ? .compact : .collapsed
+        }
+        return l
+    }
 
     // Modules
     let settings = AppSettings.shared
@@ -87,6 +157,7 @@ final class IslandState: ObservableObject {
     private var bannerQueue: [NotchNotification] = []
     private var testSampleIndex = 0
     private var hoverWork: DispatchWorkItem?
+    private var hoverSuppressedUntil: CFTimeInterval = 0
     private var quietExpiry: DispatchWorkItem?
     private var notificationProblem: IslandHint?
     private var accessibilityProblem: IslandHint?
@@ -425,11 +496,25 @@ final class IslandState: ObservableObject {
 
     // MARK: - Hover
 
+    /// Temporarily prevents hover-expand right after an AirDrop launch so the island tucks
+    /// away cleanly while macOS presents the AirDrop sheet.
+    func suppressHover(for seconds: TimeInterval) {
+        hoverSuppressedUntil = max(hoverSuppressedUntil, CACurrentMediaTime() + seconds)
+        hoverWork?.cancel()
+        if isExpanded {
+            withAnimation(Motion.quick) { isExpanded = false }
+        }
+    }
+
     /// Hover-enter uses `hoverDelay` (default 30 ms for near-instant open); hover-exit waits
     /// briefly so grazing the edge doesn't flicker.
-    func setHovering(_ hovering: Bool) {
+    func setHovering(_ hovering: Bool, on displayID: CGDirectDisplayID? = nil) {
         hoverWork?.cancel()
         if hovering {
+            if CACurrentMediaTime() < hoverSuppressedUntil { return }
+            if let displayID, activeDisplayID != displayID {
+                activeDisplayID = displayID
+            }
             guard !isExpanded else { return }
             let delay = settings.hoverDelay
             if delay <= 0.005 {
@@ -443,6 +528,7 @@ final class IslandState: ObservableObject {
             hoverWork = work
             DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
         } else {
+            if let displayID, activeDisplayID != displayID { return }
             let work = DispatchWorkItem { [weak self] in
                 guard let self, self.isExpanded else { return }
                 withAnimation(Motion.spring) { self.isExpanded = false }
@@ -450,6 +536,11 @@ final class IslandState: ObservableObject {
             hoverWork = work
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
         }
+    }
+
+    func setDragTargeted(_ targeted: Bool, on displayID: CGDirectDisplayID) {
+        if targeted { activeDisplayID = displayID }
+        if isDragTargeted != targeted { isDragTargeted = targeted }
     }
 
     private func hoverChanged() {
@@ -651,19 +742,27 @@ final class IslandState: ObservableObject {
 
     // MARK: - Shade
 
-    func toggleShade() {
+    func toggleShade(on displayID: CGDirectDisplayID? = nil) {
         if ProcessInfo.processInfo.environment["KRAMAISLAND_DEBUG"] != nil { NSLog("KramaIsland: toggleShade (was open: %d)", isShadeOpen ? 1 : 0) }
         Feedback.tap()
+        let target = resolvedTargetDisplay(preferred: displayID)
         withAnimation(Motion.spring) {
             if isLauncherOpen { isLauncherOpen = false; query = "" }
-            isShadeOpen.toggle()
+            if isShadeOpen, activeDisplayID != target {
+                // Switching Shade from Display A directly to Display B keeps it open on B.
+                activeDisplayID = target
+            } else {
+                activeDisplayID = target
+                isShadeOpen.toggle()
+            }
             if isShadeOpen { banner = nil }
         }
     }
 
-    func openShade() {
-        guard !isShadeOpen else { return }
-        toggleShade()
+    func openShade(on displayID: CGDirectDisplayID? = nil) {
+        let target = resolvedTargetDisplay(preferred: displayID)
+        if isShadeOpen, activeDisplayID == target { return }
+        toggleShade(on: target)
     }
 
     func closeShade() {
@@ -678,12 +777,30 @@ final class IslandState: ObservableObject {
 
     func toggleLauncher() {
         DispatchQueue.main.async {
+            let target = self.resolvedTargetDisplay(preferred: nil)
             withAnimation(Motion.spring) {
                 if self.isShadeOpen { self.isShadeOpen = false }
-                self.isLauncherOpen.toggle()
+                if self.isLauncherOpen, self.activeDisplayID != target {
+                    self.activeDisplayID = target
+                } else {
+                    self.activeDisplayID = target
+                    self.isLauncherOpen.toggle()
+                }
             }
             if !self.isLauncherOpen { self.query = "" }
         }
+    }
+
+    private func resolvedTargetDisplay(preferred: CGDirectDisplayID?) -> CGDirectDisplayID {
+        let managed = managedDisplayIDs
+        if let preferred, managed.isEmpty || managed.contains(preferred) {
+            return preferred
+        }
+        let cursorID = NotchGeometry.activeCursorScreen.displayID
+        if managed.isEmpty || (managed.contains(cursorID) && !hiddenDisplayIDs.contains(cursorID)) {
+            return cursorID
+        }
+        return managed.first { !hiddenDisplayIDs.contains($0) } ?? managed.first ?? cursorID
     }
 
     func openLauncherFromShade() {
@@ -729,6 +846,12 @@ final class IslandState: ObservableObject {
                 DispatchQueue.global(qos: .userInitiated).async {
                     if let on = QuickSystem.wifiIsOn() { QuickSystem.setWifi(!on) }
                 }
+            },
+            QuickAction(id: "airdrop.send", title: "AirDrop Files…", symbol: "dot.radiowaves.left.and.right", keywords: ["airdrop", "share", "send", "files", "drop", "iphone", "ipad", "mac"]) {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { AirDropManager.shared.pickAndSendFiles() }
+            },
+            QuickAction(id: "airdrop.open", title: "Open AirDrop Window", symbol: "antenna.radiowaves.left.and.right", keywords: ["airdrop", "finder", "nearby", "receive", "share"]) {
+                AirDropManager.shared.openAirDropWindow()
             },
             QuickAction(id: "mirror", title: "Camera Mirror", symbol: "camera.fill", keywords: ["camera", "mirror", "preview", "meeting"]) { [weak self] in
                 self?.showMirror = true

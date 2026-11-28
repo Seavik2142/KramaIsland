@@ -66,6 +66,7 @@ final class AppSettings: ObservableObject {
     @Pref("timerEnabled", true) var timerEnabled: Bool
     @Pref("clipboardEnabled", true) var clipboardEnabled: Bool
     @Pref("downloadsEnabled", true) var downloadsEnabled: Bool
+    @Pref("airDropEnabled", true) var airDropEnabled: Bool
     @Pref("shelfEnabled", true) var shelfEnabled: Bool
     @Pref("indicatorsEnabled", true) var indicatorsEnabled: Bool           // mic / camera / focus
     @Pref("bluetoothEnabled", true) var bluetoothEnabled: Bool
@@ -81,9 +82,10 @@ final class AppSettings: ObservableObject {
     @Pref("windowGridColumns", 2) var windowGridColumns: Int
 
     // Visibility
-    @Pref("hideInFullscreen", false) var hideInFullscreen: Bool
+    @Pref("hideInFullscreen", true) var hideInFullscreen: Bool
+    @Pref("hideInFullscreenMode", "all") var hideInFullscreenMode: String   // "all" or "video"
     @Pref("hiddenApps", "") var hiddenApps: String                          // comma-separated bundle ids
-    @Pref("displayPreference", "auto") var displayPreference: String        // "auto", "main", or display name
+    @Pref("displayPreference", "all") var displayPreference: String         // "all", "cursor", "auto", "main", or display name
 
     // Quiet Mode (Settings ▸ Visibility, see IslandState.isQuiet)
     @Pref("quietMode", false) var quietMode: Bool                           // switched on by hand
@@ -187,8 +189,8 @@ extension Color {
 
 enum Motion {
     static var reduce: Bool { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
-    static var spring: Animation { reduce ? .easeInOut(duration: 0.14) : .spring(response: 0.32, dampingFraction: 0.84) }
-    static var quick: Animation { reduce ? .easeInOut(duration: 0.09) : .spring(response: 0.22, dampingFraction: 0.88) }
+    static var spring: Animation { reduce ? .easeInOut(duration: 0.14) : .spring(response: 0.28, dampingFraction: 0.85) }
+    static var quick: Animation { reduce ? .easeInOut(duration: 0.09) : .spring(response: 0.19, dampingFraction: 0.88) }
 }
 
 enum Feedback {
